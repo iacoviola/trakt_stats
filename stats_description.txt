@@ -1,0 +1,54 @@
+WHAT CAN BE OBTAINED WITH TRAKT'S API
+
+Cache certifications using: https://api.trakt.tv/certifications/[movies/shows]
+Cache countries using: https://api.trakt.tv/countries/[movies/shows]
+Cache genres using: https://api.trakt.tv/genres/[movies/shows]
+Cache languages using: https://api.trakt.tv/languages/[movies/shows]
+
+Stats returned by user query (https://api.trakt.tv/users/[username]/stats):
+    - Number of unique movies watched
+    - Number of total movies watched
+    - Minutes spent watching movies
+    - Number of ratings given to movies
+    - Number of collected movies
+    
+    - Number of shows watched
+    - Number of ratings given to shows
+    - Number of collected shows
+
+    - Number of ratings given to seasons
+
+    - Number of unique episodes watched
+    - Number of total episodes watched
+    - Minutes spent watching episodes
+    - Number of ratings given to episodes
+    - Number of collected episodes
+
+    - Number of friends
+    - Number of followers
+    - Number of following
+
+    - Number of total ratings given
+    - Distribution of ratings given
+
+Most watched actors and directors:
+    For each movie and tv show watched, get the cast and crew and count the number of times each actor and director appears.
+    Then, sort the list by the number of times each actor and director appears and return the top 10.
+    https://api.trakt.tv/movies/id/people (extended)
+    https://api.trakt.tv/shows/id/people (extended)
+
+    Get all people per episode:
+    https://api.trakt.tv/shows/id/seasons/season/episodes/episode/people (extended)
+
+Most watched studios:
+    For each movie and tv show watched, get the studios and count the number of times each studio appears.
+    Then, sort the list by the number of times each studio appears and return the top 10.
+    https://api.trakt.tv/movies/id/studios (extended)
+    https://api.trakt.tv/shows/id/studios (extended)
+
+Get all movies and tv shows watched:
+    https://api.trakt.tv/users/[username]/watched/movies
+    https://api.trakt.tv/users/[username]/watched/shows
+
+Get IMDB top 250:
+    https://api.trakt.tv/lists/2142753/items/movies&extended=full
