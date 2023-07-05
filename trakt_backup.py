@@ -1,4 +1,3 @@
-import datetime
 import os
 import sys
 import subprocess
@@ -6,25 +5,44 @@ import argparse
 import json
 import progressbar
 import threading
+import difflib
+
 from dotenv import load_dotenv
 
 from trakt_request import TraktRequest
 
+import exceptions as ex
+
 load_dotenv()
 # We load the necessary infos from the env file
 TRAKT_API_KEY = os.getenv("TRAKT_API_KEY")
-TRAKT_USERNAME = os.getenv("TRAKT_USERNAME") if os.getenv("TRAKT_USERNAME") else ""
-BACKUP_ROOT_PATH = os.getenv("BACKUP_ROOT_PATH") if os.getenv("BACKUP_ROOT_PATH") else ""
-TRAKT_URL = os.getenv("TRAKT_URL") if os.getenv("TRAKT_URL") else "https://api.trakt.tv/users"
+TRAKT_USERNAME = os.getenv("TRAKT_USERNAME")
+BACKUP_ROOT_PATH = os.getenv("BACKUP_ROOT_PATH")
 CACHE_DIR = "cache"
+RESULTS_DIR = "results"
 
-most_watched_actors = {}
-over_rate_movies = []
+if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_actors.json")):
+    with open(os.path.join(RESULTS_DIR, "most_watched_actors.json")) as json_file:
+        most_watched_actors = json.load(json_file)
+else:
+    most_watched_actors = {}
+
+if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_studios.json")):
+    with open(os.path.join(RESULTS_DIR, "most_watched_studios.json")) as json_file:
+        most_watched_studios = json.load(json_file)
+else:
+    most_watched_studios = {}
+
+length = 0
+index = 0
+n_skip = -1
+are_different = False
+
+d = difflib.Differ()
 
 if not TRAKT_API_KEY:
     print("Please, add your Trakt API key in the .env file")
     sys.exit()
-
 
 def launch_file(filepath):
     if sys.platform.startswith("darwin"):
@@ -34,83 +52,157 @@ def launch_file(filepath):
     elif os.name == "posix":
         subprocess.call(("xdg-open", filepath))
 
-def get_crew_thread(start, end):
-    global most_watched_actors
-    global index
-    global bar
-    global over_rate_movies
+def generate_json_diff(json1, json2):
 
-    for movie in watched_movies[start:end]:
+    global n_skip
+
+    diff = d.compare(json1, json2)
+    std_diff = (line for line in diff if not line.startswith(" "))
+    
+    first_file = list(line[1:] for line in std_diff if line.startswith("-"))
+
+    if len(first_file) > 0 and "plays" not in first_file[0]:
+        first_file.insert(0, first_file.pop())
+        first_file.insert(0, first_file.pop())
+
+    second_file = list(line[1:] for line in std_diff if line.startswith("+"))
+    if len(second_file) > 0 and "plays" not in second_file[0]:
+        second_file.insert(0, second_file.pop())
+        second_file.insert(0, second_file.pop())
+
+    first_file_str = "".join(first_file)
+    second_file_str = "".join(second_file)
+
+    n_skip = len(json.loads("[" + first_file_str[:-2] + "]"))
+    if first_file_str == "" and second_file_str == "":
+        return "[]"
+    return ("[" + first_file_str + second_file_str)[:-2] + "]"
+
+def launch_threads(function, n_threads, list_len):
+
+    threads = []
+
+    if list_len >= 24:
+        for i in range(0, n_threads):
+            start = int(i * (list_len / n_threads) + 1)
+            if i == 0:
+                start = 0
+            end = int((i + 1) * (list_len / n_threads))
+            if end > list_len:
+                end = list_len
+            threads.append(threading.Thread(target=function, args=(start, end)))
+            threads[i].start()
+
+        for i in range(0, n_threads):
+            threads[i].join()
+    else:
+        get_crew(0, list_len)
+
+def update_dict(dictionary, key, i):
+    if i < n_skip or n_skip == -1:
+        if key in dictionary:
+            dictionary[key] += 1
+        else:
+            dictionary[key] = 1
+    else:
+        if dictionary[key] > 1:
+            dictionary[key] -= 1
+        else:
+            del dictionary[key]
+
+def get_crew(start, end):
+
+    global index
+
+    for i, movie in enumerate(watched_movies[start:end]):
         with threading.Lock():
             bar.update(index)
             index += 1
-        crew = trakt_request.get_crew(movie["movie"]["ids"]["trakt"], "movies")
-        if not isinstance(crew, dict):
-            over_rate_movies.append(movie["movie"]["ids"]["trakt"])
-        for actor in crew["cast"]:
-            if actor["person"]["name"] in most_watched_actors:
-                with threading.Lock():
-                    most_watched_actors[actor["person"]["name"]] += 1
+        while(True):
+            try:
+                crew = trakt_request.get_crew(movie["movie"]["ids"]["trakt"], "movies")
+            except Exception as e:
+                print(e)
             else:
-                with threading.Lock():
-                    most_watched_actors[actor["person"]["name"]] = 1
+                break
+
+        for actor in crew["cast"]:
+            target = actor["person"]["name"]
+            with threading.Lock():
+                update_dict(most_watched_actors, target)
+
+def get_studios(start, end):
+
+    global index
+
+    for i, movie in enumerate(watched_movies[start:end]):
+        with threading.Lock():
+            bar.update(index)
+            index += 1
+        while(True):
+            try:
+                studios = trakt_request.get_studio(movie["movie"]["ids"]["trakt"], "movies")
+            except ex.EmptyResponseException as e:
+                print(e)
+            except ex.OverRateLimitException as e:
+                print(e)
+                break
+            else:
+                break
+
+        for studio in studios:
+            target = studio["name"]
+            with threading.Lock():
+                update_dict(most_watched_studios, target, i)
 
 # Check if the API key is valid
 if len(TRAKT_API_KEY) != 64:
     print("Invalid Trakt API key, please check your trakt_request.py file")
     sys.exit()
 
-argparser = argparse.ArgumentParser(description="Backup your Trakt data")
-argparser.add_argument("-i", "--interactive", action="store_true")
-argparser.add_argument("-u", "--username", action="store", help="Your Trakt username")
-args = argparser.parse_args()
-
-if args.interactive:
-    # -Y or --yes to save files in the current working directory (optional)
-    argparser.add_argument(
-        "-Y", "--yes", action="store_true", help="Save files in the current working directory", required=False
-    )
-    # Positional argument for the username (optional)
-    argparser.add_argument("username", nargs="?", help="Your Trakt username")
-    args = argparser.parse_args()
-
-    # Ask the user if they want to save the files in the current working directory
-    if not args.yes:
-        folder = input(
-            f"Save files here (shell current working directory) ? [Y/n]\n(files will otherwise be saved in {os.path.expanduser('~')}): "
-        )
-    else:
-        folder = "Y"
-
-    if folder.upper() == "Y":
-        root = os.getcwd()
-        BACKUP_ROOT_PATH = os.path.join(root, "trakt_backup")
-    else:
-        root = os.path.expanduser("~")
-        BACKUP_ROOT_PATH = os.path.join(root, "trakt_backup")
-    if args.username:
-        TRAKT_USERNAME = args.username
-    else:
-        TRAKT_USERNAME = input("Enter your Trakt username: ")
-else:
-    if args.username:
-        TRAKT_USERNAME = args.username
-
-
-print(f"Files will be saved in: {BACKUP_ROOT_PATH}")
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
 
+if not os.path.exists(RESULTS_DIR):
+    os.makedirs(RESULTS_DIR)
+
 trakt_request = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_DIR)
 
 #try:
-#trakt_request.create_data_files()
 trakt_request.get_cached_data()
 
-watched_movies = json.loads(open("cache/watched_movies.json", "r").read())
+designated_file = None
+
+new_file = open(os.path.join(CACHE_DIR, "tmp_watched_movies.json"), "w")
+new_file.write(json.dumps(trakt_request.get_watched_movies(), separators=(",", ":"), indent=4))
+new_file.close()
+
+with open(os.path.join(CACHE_DIR, "tmp_watched_movies.json")) as json_file:
+    new_file = json.load(json_file)
+
+str_new_file = json.dumps(new_file, separators=(",", ":"), indent=4)
+
+latest_file = None
+str_latest_file = None
+
+#if there is no history file, we create one
+if not os.path.isfile(os.path.join(CACHE_DIR, "watched_movies.json")) or most_watched_actors == {} or most_watched_studios == {}:
+    designated_file = str_new_file
+else:
+    with open(os.path.join(CACHE_DIR, "watched_movies.json")) as json_file:
+        latest_file = json.load(json_file)
+    str_latest_file = json.dumps(latest_file, separators=(",", ":"), indent=4)
+    
+
+#if there is history file, we compare it with the new one
+if not designated_file:
+    designated_file = generate_json_diff(str_new_file.splitlines(keepends=True), str_latest_file.splitlines(keepends=True))
+    are_different = designated_file != "[]"
+
+watched_movies = json.loads(designated_file)
+
 length = len(watched_movies)
-index = 0
 
 widgets = [
     " [", progressbar.Timer(), "] ",
@@ -118,42 +210,28 @@ widgets = [
     "(", progressbar.Counter(), "/%s" % length, ") ",
 ]
 
-bar = progressbar.ProgressBar(maxval=length, redirect_stdout=True, widgets=widgets)
+if are_different or most_watched_actors == {}:
+    bar = progressbar.ProgressBar(maxval=length, redirect_stdout=True, widgets=widgets)
 
-threads = []
+    index = 0
+    launch_threads(get_crew, 6, length)
 
-max_threads = 6
-for i in range(0, max_threads):
-    start = int(i * (length / max_threads) + 1)
-    if i == 0:
-        start = 0
-    end = int((i + 1) * (length / max_threads))
-    if end > length:
-        end = length
-    threads.append(threading.Thread(target=get_crew_thread, args=(start, end)))
-    threads[i].start()
+    bar.finish()
 
-for i in range(0, max_threads):
-    threads[i].join()
+    most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=lambda item: item[1], reverse=True)}
+    with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "w") as outfile:
+        json.dump(most_watched_actors, outfile, indent=4)
 
-"Over rate movies: " + str(len(over_rate_movies))
+if are_different or most_watched_studios == {}:
+    bar = progressbar.ProgressBar(maxval=length, redirect_stdout=True, widgets=widgets)
 
-for movie_id in over_rate_movies:
-    crew = trakt_request.get_crew(movie_id, "movies")
-    for actor in crew["cast"]:
-        if actor["person"]["name"] in most_watched_actors:
-            most_watched_actors[actor["person"]["name"]] += 1
-        else:
-            most_watched_actors[actor["person"]["name"]] = 1
+    index = 0
+    launch_threads(get_studios, 6, length)
 
-most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=lambda item: item[1], reverse=True)}
-with open("cache/most_watched_actors.json", "w") as outfile:
-    json.dump(most_watched_actors, outfile, indent=4)
-    
-'''except Exception as e:
-    print(e)
-    sys.exit()'''
+    bar.finish()
 
-#if args.interactive:
-    #launch_file(new_backup_folder_name)
-print("Done.")
+    most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=lambda item: item[1], reverse=True)}
+    with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "w") as outfile:
+        json.dump(most_watched_studios, outfile, indent=4)
+
+os.rename(os.path.join(CACHE_DIR, "tmp_watched_movies.json"), os.path.join(CACHE_DIR, "watched_movies.json"))

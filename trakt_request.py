@@ -2,6 +2,7 @@ import requests
 import json
 import os
 
+import exceptions as ex
 
 class TraktRequest:
 
@@ -28,10 +29,12 @@ class TraktRequest:
                 self.get(file, "movies", cache=True)
             if not os.path.isfile(os.path.join(self.root_path, f"{file}_shows.json")):
                 self.get(file, "shows", cache=True)
-        self.get_watched_movies()
 
     def get_crew(self, media_id, media_type):
         return self.get(f"{media_type}/{media_id}", "people")
+    
+    def get_studio(self, media_id, media_type):
+        return self.get(f"{media_type}/{media_id}", "studios")
 
     def create_data_files(self):
         self.get_watched_movies()
@@ -62,13 +65,12 @@ class TraktRequest:
         response = requests.get(f"{tmp_url}?limit=100000", headers=self.headers)
 
         if response.status_code == 404:
-            raise Exception(f"Error: user {self.username} not found")
+            raise ex.OverRateLimitException(f"Error: user {self.username} not found")
         elif response.status_code != 200:
-            print(f"An error as occurred with code: {response.status_code} for operation {action}/{endpoint_type}")
-            return response.status_code
+            raise ex.OverRateLimitException(f"Error: {response.status_code} {response.reason}")
 
         if not response.json():
-            print(f"No {endpoint_type} found in {action}")
+            raise ex.EmptyResponseException(f"No {endpoint_type} found in {action}")
             return
 
         print(f"Obtained: {tmp_url}")
@@ -80,7 +82,7 @@ class TraktRequest:
             return response.json()
         
     def get_watched_movies(self):
-        self.get("watched", "movies", cache=True, oauth=True)
+        return self.get("watched", "movies", cache=False, oauth=True)
 
     def get_watched_episodes(self):
         self.get("watched", "episodes")
