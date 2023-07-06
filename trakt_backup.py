@@ -3,6 +3,7 @@ import sys
 import subprocess
 import argparse
 import json
+import time
 import progressbar
 import threading
 import difflib
@@ -27,6 +28,13 @@ if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_actors.json")):
 else:
     most_watched_actors = {}
 
+if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_directors.json")):
+    with open(os.path.join(RESULTS_DIR, "most_watched_directors.json")) as json_file:
+        most_watched_directors = json.load(json_file)
+else:
+    most_watched_directors = {}
+
+needs_update = "actors" if most_watched_actors == {} and most_watched_directors != {} else "directors" if most_watched_actors != {} and most_watched_directors == {} else "both" if most_watched_actors == {} and most_watched_directors == {} else "none"
 if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_studios.json")):
     with open(os.path.join(RESULTS_DIR, "most_watched_studios.json")) as json_file:
         most_watched_studios = json.load(json_file)
@@ -121,15 +129,27 @@ def get_crew(start, end):
         while(True):
             try:
                 crew = trakt_request.get_crew(movie["movie"]["ids"]["trakt"], "movies")
-            except Exception as e:
+            except ex.OverRateLimitException as e:
                 print(e)
+                time.sleep(e.retry_after())
+            except ex.EmptyResponseException as e:
+                print(e)
+                break
             else:
                 break
 
-        for actor in crew["cast"]:
-            target = actor["person"]["name"]
-            with threading.Lock():
-                update_dict(most_watched_actors, target)
+        if needs_update == "actors" or needs_update == "both":
+            for actor in crew["cast"]:
+                target = actor["person"]["name"]
+                with threading.Lock():
+                    update_dict(most_watched_actors, target, i)
+
+        if needs_update == "directors" or needs_update == "both":
+            for director in crew["crew"]["directing"]:
+                if director["job"] == "Director":
+                    target = director["person"]["name"]
+                    with threading.Lock():
+                        update_dict(most_watched_directors, target, i)
 
 def get_studios(start, end):
 
@@ -142,9 +162,10 @@ def get_studios(start, end):
         while(True):
             try:
                 studios = trakt_request.get_studio(movie["movie"]["ids"]["trakt"], "movies")
-            except ex.EmptyResponseException as e:
-                print(e)
             except ex.OverRateLimitException as e:
+                print(e)
+                time.sleep(e.retry_after())
+            except ex.EmptyResponseException as e:
                 print(e)
                 break
             else:
@@ -187,7 +208,7 @@ latest_file = None
 str_latest_file = None
 
 #if there is no history file, we create one
-if not os.path.isfile(os.path.join(CACHE_DIR, "watched_movies.json")) or most_watched_actors == {} or most_watched_studios == {}:
+if not os.path.isfile(os.path.join(CACHE_DIR, "watched_movies.json")) or most_watched_actors == {} or most_watched_studios == {} or most_watched_directors == {}:
     designated_file = str_new_file
 else:
     with open(os.path.join(CACHE_DIR, "watched_movies.json")) as json_file:
@@ -210,7 +231,7 @@ widgets = [
     "(", progressbar.Counter(), "/%s" % length, ") ",
 ]
 
-if are_different or most_watched_actors == {}:
+if are_different or most_watched_actors == {} or most_watched_directors == {}:
     bar = progressbar.ProgressBar(maxval=length, redirect_stdout=True, widgets=widgets)
 
     index = 0
@@ -218,9 +239,15 @@ if are_different or most_watched_actors == {}:
 
     bar.finish()
 
-    most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=lambda item: item[1], reverse=True)}
-    with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "w") as outfile:
-        json.dump(most_watched_actors, outfile, indent=4)
+    if needs_update == "actors" or needs_update == "both":
+        most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=lambda item: item[1], reverse=True)}
+        with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "w") as outfile:
+            json.dump(most_watched_actors, outfile, indent=4)
+
+    if needs_update == "directors" or needs_update == "both":
+        most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=lambda item: item[1], reverse=True)}
+        with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "w") as outfile:
+            json.dump(most_watched_directors, outfile, indent=4)
 
 if are_different or most_watched_studios == {}:
     bar = progressbar.ProgressBar(maxval=length, redirect_stdout=True, widgets=widgets)

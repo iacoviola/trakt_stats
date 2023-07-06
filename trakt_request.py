@@ -65,9 +65,11 @@ class TraktRequest:
         response = requests.get(f"{tmp_url}?limit=100000", headers=self.headers)
 
         if response.status_code == 404:
-            raise ex.OverRateLimitException(f"Error: user {self.username} not found")
+            raise ex.ItemNotFoundException(f"Error: {response.status_code} {response.reason}")
+        if response.status_code == 429:
+            raise ex.OverRateLimitException(f"Error: {response.status_code} {response.reason}", response.headers.get("Retry-After"))
         elif response.status_code != 200:
-            raise ex.OverRateLimitException(f"Error: {response.status_code} {response.reason}")
+            raise Exception(f"Error: {response.status_code} {response.reason}")
 
         if not response.json():
             raise ex.EmptyResponseException(f"No {endpoint_type} found in {action}")
