@@ -66,16 +66,16 @@ class TraktRequest:
 
         if response.status_code == 404:
             raise ex.ItemNotFoundException(f"Error: {response.status_code} {response.reason}")
-        if response.status_code == 429:
+        elif response.status_code == 429:
             raise ex.OverRateLimitException(f"Error: {response.status_code} {response.reason}", response.headers.get("Retry-After"))
         elif response.status_code != 200:
             raise Exception(f"Error: {response.status_code} {response.reason}")
 
         if not response.json():
             raise ex.EmptyResponseException(f"No {endpoint_type} found in {action}")
-            return
 
         print(f"Obtained: {tmp_url}")
+
         if cache:
             file_watched = open(os.path.join(self.root_path, f"{action}_{endpoint_type}.json"), "w")
             file_watched.write(json.dumps(response.json(), separators=(",", ":"), indent=4))
@@ -90,7 +90,7 @@ class TraktRequest:
         self.get("watched", "episodes")
 
     def get_watched_shows(self):
-        self.get("watched", "shows")
+        return self.get("watched", "shows", cache=False, oauth=True)
 
     def get_movies_ratings(self):
         self.get("ratings", "movies")
@@ -126,4 +126,4 @@ class TraktRequest:
         self.get("collection", "shows")
 
     def get_user_stats(self):
-        self.get("stats", "")
+        return self.get("stats", "", cache=False, oauth=True)

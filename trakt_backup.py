@@ -6,7 +6,11 @@ import json
 import time
 import progressbar
 import threading
-import difflib
+
+from deepdiff import DeepDiff
+from deepdiff.helper import CannotCompare
+
+from pprint import pprint
 
 from dotenv import load_dotenv
 
@@ -35,6 +39,7 @@ else:
     most_watched_directors = {}
 
 needs_update = "actors" if most_watched_actors == {} and most_watched_directors != {} else "directors" if most_watched_actors != {} and most_watched_directors == {} else "both" if most_watched_actors == {} and most_watched_directors == {} else "none"
+
 if os.path.exists(os.path.join(RESULTS_DIR, "most_watched_studios.json")):
     with open(os.path.join(RESULTS_DIR, "most_watched_studios.json")) as json_file:
         most_watched_studios = json.load(json_file)
@@ -45,8 +50,6 @@ length = 0
 index = 0
 n_skip = -1
 are_different = False
-
-d = difflib.Differ()
 
 if not TRAKT_API_KEY:
     print("Please, add your Trakt API key in the .env file")
@@ -60,31 +63,28 @@ def launch_file(filepath):
     elif os.name == "posix":
         subprocess.call(("xdg-open", filepath))
 
+def compare_function(x, y, level=None):
+    try:
+        return x["movie"]["ids"]["trakt"] == y["movie"]["ids"]["trakt"]
+    except Exception:
+        raise CannotCompare from None
+
 def generate_json_diff(json1, json2):
 
     global n_skip
 
-    diff = d.compare(json1, json2)
-    std_diff = (line for line in diff if not line.startswith(" "))
-    
-    first_file = list(line[1:] for line in std_diff if line.startswith("-"))
+    movies = []
+    diff = DeepDiff(json1, json2, ignore_order=True)
 
-    if len(first_file) > 0 and "plays" not in first_file[0]:
-        first_file.insert(0, first_file.pop())
-        first_file.insert(0, first_file.pop())
+    if "iterable_item_added" in diff:
+        for key, movie in diff["iterable_item_added"].items():
+            movies.append(movie)
+            n_skip += 1
+    if "iterable_item_removed" in diff:
+        for key, movie in diff["iterable_item_removed"].items():
+            movies.append(movie)
 
-    second_file = list(line[1:] for line in std_diff if line.startswith("+"))
-    if len(second_file) > 0 and "plays" not in second_file[0]:
-        second_file.insert(0, second_file.pop())
-        second_file.insert(0, second_file.pop())
-
-    first_file_str = "".join(first_file)
-    second_file_str = "".join(second_file)
-
-    n_skip = len(json.loads("[" + first_file_str[:-2] + "]"))
-    if first_file_str == "" and second_file_str == "":
-        return "[]"
-    return ("[" + first_file_str + second_file_str)[:-2] + "]"
+    return movies
 
 def launch_threads(function, n_threads, list_len):
 
@@ -176,11 +176,41 @@ def get_studios(start, end):
             with threading.Lock():
                 update_dict(most_watched_studios, target, i)
 
+def get_designated_file(type):
+
+    global are_different
+
+    designated_file = None
+
+    with open(os.path.join(CACHE_DIR, f"tmp_watched_{type}s.json"), "w") as new_file:
+        if type == "movie":
+            new_file.write(json.dumps(trakt_request.get_watched_movies(), separators=(",", ":"), indent=4))
+        elif type == "show":
+            new_file.write(json.dumps(trakt_request.get_watched_shows(), separators=(",", ":"), indent=4))
+
+    with open(os.path.join(CACHE_DIR, f"tmp_watched_{type}s.json")) as json_file:
+        new_file = json.load(json_file)
+
+    latest_file = None
+
+    #if there is no history file, we create one
+    if not os.path.isfile(os.path.join(CACHE_DIR, f"watched_{type}s.json")) or most_watched_actors == {} or most_watched_studios == {} or most_watched_directors == {}:
+        designated_file = new_file
+    else:
+        with open(os.path.join(CACHE_DIR, f"watched_{type}s.json")) as json_file:
+            latest_file = json.load(json_file)    
+
+    #if there is history file, we compare it with the new one
+    if not designated_file:
+        designated_file = generate_json_diff(latest_file, new_file)
+        are_different = designated_file != []
+
+    return designated_file
+
 # Check if the API key is valid
 if len(TRAKT_API_KEY) != 64:
     print("Invalid Trakt API key, please check your trakt_request.py file")
     sys.exit()
-
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
@@ -193,35 +223,10 @@ trakt_request = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_DIR)
 #try:
 trakt_request.get_cached_data()
 
-designated_file = None
+with open(os.path.join(RESULTS_DIR, "user_stats.json"), "w") as stats_file:
+    stats_file.write(json.dumps(trakt_request.get_user_stats(), separators=(",", ":"), indent=4))   
 
-new_file = open(os.path.join(CACHE_DIR, "tmp_watched_movies.json"), "w")
-new_file.write(json.dumps(trakt_request.get_watched_movies(), separators=(",", ":"), indent=4))
-new_file.close()
-
-with open(os.path.join(CACHE_DIR, "tmp_watched_movies.json")) as json_file:
-    new_file = json.load(json_file)
-
-str_new_file = json.dumps(new_file, separators=(",", ":"), indent=4)
-
-latest_file = None
-str_latest_file = None
-
-#if there is no history file, we create one
-if not os.path.isfile(os.path.join(CACHE_DIR, "watched_movies.json")) or most_watched_actors == {} or most_watched_studios == {} or most_watched_directors == {}:
-    designated_file = str_new_file
-else:
-    with open(os.path.join(CACHE_DIR, "watched_movies.json")) as json_file:
-        latest_file = json.load(json_file)
-    str_latest_file = json.dumps(latest_file, separators=(",", ":"), indent=4)
-    
-
-#if there is history file, we compare it with the new one
-if not designated_file:
-    designated_file = generate_json_diff(str_new_file.splitlines(keepends=True), str_latest_file.splitlines(keepends=True))
-    are_different = designated_file != "[]"
-
-watched_movies = json.loads(designated_file)
+watched_movies = get_designated_file("movie")
 
 length = len(watched_movies)
 
