@@ -4,40 +4,23 @@ import os
 
 import exceptions as ex
 
-class TraktRequest:
+class TMDBRequest:
 
-    base_url = "https://api.trakt.tv"
-    cached_data = ["certifications", "countries", "genres", "languages"]
+    base_url = "https://api.themoviedb.org/3"
     
-    def __init__(self, api_key, username, root_path):
-        self.username = username
-        self.users_url = f"{self.base_url}/users/{self.username}"
+    def __init__(self, api_key, root_path):
         self.root_path = root_path
         # Trakt request required headers
         self.headers = {
-            # Trakt return a json response
-            "Content-Type": "application/json",
-            # Trakt api version
-            "trakt-api-version": "2",
-            # Trakt api key
-            "trakt-api-key": api_key,  # Your trakt api key
+            "accept": "application/json",
+            "Authorization": "Bearer " + api_key
         }
 
-    def get_cached_data(self):
-        for file in self.cached_data:
-            if not os.path.isfile(os.path.join(self.root_path, f"{file}_movies.json")):
-                self.get(file, "movies", cache=True)
-            if not os.path.isfile(os.path.join(self.root_path, f"{file}_shows.json")):
-                self.get(file, "shows", cache=True)
-
     def get_crew(self, media_id, media_type):
-        return self.get(f"{media_type}/{media_id}", "people")
+        return self.get(f"{media_type}/{media_id}", "credits")
     
-    def get_studio(self, media_id, media_type):
-        return self.get(f"{media_type}/{media_id}", "studios")
-    
-    def get_list(self, list_id):
-        return self.get(f"lists/{list_id}/items", "movies")
+    def get_item_details(self, media_id, media_type):
+        return self.get(f"{media_type}", f"{media_id}")
 
     def create_data_files(self):
         self.get_watched_movies()
@@ -58,7 +41,7 @@ class TraktRequest:
         self.get_user_stats()
 
     # Cache data from trakt api by specifying the action and type of media
-    def get(self, action, endpoint_type, cache=False, oauth=False):
+    def get(self, action, endpoint_type, cache=False, caching_path="", oauth=False):
         if oauth:
             tmp_url = f"{self.users_url}/{action}/{endpoint_type}"
         else:
@@ -80,14 +63,14 @@ class TraktRequest:
         print(f"Obtained: {tmp_url}")
 
         if cache:
-            file_watched = open(os.path.join(self.root_path, f"{action}_{endpoint_type}.json"), "w")
+            file_watched = open(os.path.join(self.root_path, f"{caching_path}/{action}_{endpoint_type}.json"), "w")
             file_watched.write(json.dumps(response.json(), separators=(",", ":"), indent=4))
             file_watched.close()
         else:
             return response.json()
         
     def get_watched_movies(self):
-        return self.get("watched", "movies", cache=False, oauth=True)
+        return self.get("watched", "movies", cache=True, caching_path="/movies", oauth=True)
 
     def get_watched_episodes(self):
         self.get("watched", "episodes")
