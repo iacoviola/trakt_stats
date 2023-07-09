@@ -46,10 +46,12 @@ RESULTS_DIR: str = "results"
 needs_update: list = []
 top_lists_dict: dict = {"imdb_top250": 2142753, "trakt_top250": 4834049, "imdb_bottom100": 2142791, "reddit_top250_2019": 6544049, "statistical_best500": 23629843}
 missing_top_lists: list = []
+media_types: list = ["movies", "shows"]
 
 most_watched_actors: dict = load_file("actors")
 most_watched_directors: dict = load_file("directors")
 most_watched_studios: dict = load_file("studios")
+most_watched_networks: dict = load_file("networks")
 most_watched_genres: dict = load_file("genres")
 most_watched_countries: dict = load_file("countries")
 
@@ -219,7 +221,10 @@ def get_details(start: int, end: int, media_type: str, watched_items: dict) -> N
                 for studio in tmdb_item["production_companies"]:
                     target: str = studio["name"]
                     with threading.Lock():
-                        update_dict(most_watched_studios, target, i, media_type + "s")
+                        if media_type == "movie":
+                            update_dict(most_watched_studios, target, i)
+                        else:
+                            update_dict(most_watched_networks, target, i)
 
                 #if "countries" in needs_update:
                 for country in tmdb_item["production_countries"]:
@@ -365,9 +370,14 @@ if get_in_cond or details_cond:
         bar.finish()
 
     if "studios" in needs_update or get_in_cond:
-        most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
+        most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(), reverse=True)}
         with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "w") as outfile:
             json.dump(most_watched_studios, outfile, indent=default_indent)
+
+    if "networks" in needs_update or get_in_cond:
+        most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(), reverse=True)}
+        with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "w") as outfile:
+            json.dump(most_watched_networks, outfile, indent=default_indent)
 
     if "genres" in needs_update or get_in_cond:
         most_watched_genres = {k: v for k, v in sorted(most_watched_genres.items(), key=sort_func(True), reverse=True)}
@@ -391,5 +401,6 @@ for top, list_id in top_lists_dict.items():
 with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "w") as outfile:
     json.dump(best_of, outfile, separators=(",", ":"), indent=default_indent)
 
-os.rename(os.path.join(CACHE_DIR, "tmp_watched_movies.json"), os.path.join(RESULTS_DIR, "watched_movies.json"))
-os.rename(os.path.join(CACHE_DIR, "tmp_watched_shows.json"), os.path.join(RESULTS_DIR, "watched_shows.json"))
+for media in media_types:
+    os.remove(os.path.join(RESULTS_DIR, f"watched_{media}.json"))
+    os.rename(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))

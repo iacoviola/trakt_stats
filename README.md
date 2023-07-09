@@ -67,7 +67,8 @@ This includes:
 - `most_watched_directors.json`: Your most watched directors, sorted by number of movies watched
 - `most_watched_genres.json`: Your most watched genres, sorted by number of items (movies or shows) watched
 - `most_watched_countries.json`: Your most watched countries, sorted by number of items (movies or shows) watched
-- `most_watched_studios.json`: Your most watched studios, sorted by number of items (movies or shows) watched
+- `most_watched_studios.json`: Your most watched studios, sorted by number of movies watched
+- `most_watched_networks.json`: Your most watched networks, sorted by number of shows watched
 - `user_stats.json`: Your stats about movies and shows (time spent watching, number of items watched, etc.)
 - `best_of_progress.json`: Your progresses in watching movies from a selection of lists:
     - IMDb Top 250
