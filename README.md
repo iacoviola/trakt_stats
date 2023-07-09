@@ -1,7 +1,9 @@
 # Trakt Stats
 
 > Get enhanced stats about your Trakt account
+>
 > This is still a rudimentary version, your data will be saved in a json file and you will have to use a json viewer to see the results
+>
 > Some time in the future, I plan to add an interface to display the results in a more user-friendly way
 
 Warning, you need to have a **public trakt account** in order to use the API.
