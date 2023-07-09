@@ -17,7 +17,7 @@ class TMDBRequest:
         }
 
     def get_crew(self, media_id, media_type):
-        return self.get(f"{media_type}/{media_id}", "credits")
+        return self.get(f"{media_type}/{media_id}", "credits" if media_type == "movie" else "aggregate_credits")
     
     def get_item_details(self, media_id, media_type):
         return self.get(f"{media_type}", f"{media_id}")
