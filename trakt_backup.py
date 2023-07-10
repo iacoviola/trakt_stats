@@ -222,7 +222,7 @@ def get_designated_file(media_type: str) -> Tuple[dict, RequestReason]:
 
     #if there is history file, we compare it with the new one
     if not designated_file:
-        designated_file = generate_json_diff(latest_file, new_file)
+        designated_file = generate_json_diff(new_file, latest_file)
         file_status = RequestReason.WATCHED_FILE_DIFFERENT if designated_file != [] else RequestReason.NO_REASON
 
     return [designated_file, file_status]
