@@ -21,6 +21,13 @@ class TMDBRequest:
     
     def get_item_details(self, media_id, media_type):
         return self.get(f"{media_type}", f"{media_id}")
+    
+    def get_item_image(self, image_path, item_name, directory):
+        with open(os.path.join(directory, f"{item_name}.png"), "wb") as file:
+            print(f"Obtaining: https://image.tmdb.org/t/p/w500/{image_path}")
+            response = requests.get(f"https://image.tmdb.org/t/p/w500/{image_path}")
+            print(f"Obtained: https://image.tmdb.org/t/p/w500/{image_path}")
+            file.write(response.content)
 
     def create_data_files(self):
         self.get_watched_movies()

@@ -15,6 +15,7 @@ from trakt_request import TraktRequest
 from tmdb_request import TMDBRequest
 import exceptions as ex
 from request_reason import RequestReason
+from graph_drawer import GraphDrawer
 
 def sort_func(order_type: bool = False) -> Callable[[dict], int]:
     if order_type:
@@ -32,7 +33,6 @@ def load_file(file_path: str) -> dict:
         needs_update.append(file_path)
 
     return py_dict
-    
 
 load_dotenv()
 # We load the necessary infos from the env file
@@ -42,10 +42,18 @@ TRAKT_USERNAME: str = os.getenv("TRAKT_USERNAME")
 BACKUP_ROOT_PATH: str = os.getenv("BACKUP_ROOT_PATH")
 CACHE_DIR: str = "cache"
 RESULTS_DIR: str = "results"
+IMG_DIR: str = os.path.join(RESULTS_DIR, "img")
+ACTORS_DIR: str = os.path.join(IMG_DIR, "actors")
+DIRECTORS_DIR: str = os.path.join(IMG_DIR, "directors")
+STUDIOS_DIR: str = os.path.join(IMG_DIR, "studios")
+NETWORKS_DIR: str = os.path.join(IMG_DIR, "networks")
 
 needs_update: list = []
-top_lists_dict: dict = {"imdb_top250": 2142753, "trakt_top250": 4834049, "imdb_bottom100": 2142791, "reddit_top250_2019": 6544049, "statistical_best500": 23629843}
-missing_top_lists: list = []
+top_movielists_dict: dict = {"imdb_top250_movies": 2142753, "trakt_top250_movies": 4834049, "imdb_bottom100_movies": 2142791, "reddit_top250_2019_movies": 6544049, "statistical_best500_movies": 23629843}
+missing_top_movielists: list = []
+
+top_showslists_dict: dict = {"imdb_top250_shows": 2143363, "trakt_top250_shows": 4834057, "rollingstone_top100_shows": 2748259}
+missing_top_showslists: list = []
 media_types: list = ["movies", "shows"]
 
 most_watched_actors: dict = load_file("actors")
@@ -61,9 +69,15 @@ if os.path.exists(os.path.join(RESULTS_DIR, "best_of_progress.json")):
 else:
     best_of: dict = {}
 
-for key, value in top_lists_dict.items():
+for key, value in top_movielists_dict.items():
     if key not in best_of.keys():
-        missing_top_lists.append(key)
+        missing_top_movielists.append(key)
+        if "lists" not in needs_update:
+            needs_update.append("lists")
+
+for key, value in top_showslists_dict.items():
+    if key not in best_of.keys():
+        missing_top_showslists.append(key)
         if "lists" not in needs_update:
             needs_update.append("lists")
 
@@ -117,33 +131,21 @@ def launch_threads(function: Callable[[int, int, str, dict], None], n_threads: i
     for i in range(0, n_threads):
         threads[i].join()
 
-def update_dict(dictionary: dict, key: str, i: int, media_type: str | None = None) -> None:
+def update_dict(dictionary: dict, key: str, i: int, media_type: str = "movies") -> None:
 
     global record_del_startpoint
 
     if i < record_del_startpoint or record_del_startpoint == -1:
         if key in dictionary:
-            if media_type:
-                dictionary[key][media_type] += 1
-            else:
-                dictionary[key] += 1
+            dictionary[key][media_type] += 1
         else:
-            if media_type:
-                dictionary[key] = {"movies": 0, "shows": 0}
-                dictionary[key][media_type] += 1
-            else:
-                dictionary[key] = 1
+            dictionary[key] = {"movies": 0, "shows": 0}
+            dictionary[key][media_type] += 1
     else:
-        if media_type:
-            if dictionary[key][media_type] > 1:
-                dictionary[key][media_type] -= 1
-            else:
-                del dictionary[key][media_type]
+        if dictionary[key][media_type] > 1:
+            dictionary[key][media_type] -= 1
         else:
-            if dictionary[key] > 1:
-                dictionary[key] -= 1
-            else:
-                del dictionary[key]
+            del dictionary[key][media_type]
 
 def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None:
 
@@ -175,6 +177,8 @@ def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None
                 target: str = actor["name"]
                 with threading.Lock():
                     update_dict(most_watched_actors, target, i, media_type + "s")
+                    if "profile_path" not in most_watched_actors[target]:
+                        most_watched_actors[target]["profile_path"] = actor["profile_path"]
 
             #if "directors" in needs_update and media_type == "movie":
             if media_type == "movie":
@@ -183,6 +187,8 @@ def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None
                         target: str = crew_p["name"] 
                         with threading.Lock():
                             update_dict(most_watched_directors, target, i)
+                            if "profile_path" not in most_watched_directors[target]:
+                                most_watched_directors[target]["profile_path"] = crew_p["profile_path"]
         else:
             error_occured = False
 
@@ -203,7 +209,7 @@ def get_details(start: int, end: int, media_type: str, watched_items: dict) -> N
                     print(e)
                     print("Retrying in " + str(e.retry_after()) + " seconds...")
                     time.sleep(e.retry_after())
-                except (ex.EmptyResponseException, ex.NotFoundException) as e:
+                except (ex.EmptyResponseException, ex.ItemNotFoundException) as e:
                     print(e)
                     error_occured = True
                     break
@@ -222,9 +228,13 @@ def get_details(start: int, end: int, media_type: str, watched_items: dict) -> N
                     target: str = studio["name"]
                     with threading.Lock():
                         if media_type == "movie":
-                            update_dict(most_watched_studios, target, i)
+                            update_dict(most_watched_studios, target, i, media_type + "s")
+                            if "logo_path" not in most_watched_studios[target]:
+                                most_watched_studios[target]["logo_path"] = studio["logo_path"]
                         else:
-                            update_dict(most_watched_networks, target, i)
+                            update_dict(most_watched_networks, target, i, media_type + "s")
+                            if "logo_path" not in most_watched_networks[target]:
+                                most_watched_networks[target]["logo_path"] = studio["logo_path"]
 
                 #if "countries" in needs_update:
                 for country in tmdb_item["production_countries"]:
@@ -266,17 +276,17 @@ def get_designated_file(media_type: str) -> Tuple[dict, RequestReason]:
 
     return [designated_file, file_status]
 
-def search_movie(watched_movies: dict, top_list_dict: dict) -> Tuple[int, int, list]:
-    movie_list: list = []
+def search_item(watched_items: dict, top_list_dict: dict, media_type: str) -> Tuple[int, int, list]:
+    items_list: list = []
     counter: int = 0
-    for movie in watched_movies:
-        for list_movie in top_list_dict:
-            if movie["movie"]["ids"]["trakt"] == list_movie["movie"]["ids"]["trakt"]:
-                movie_list.append({"id": list_movie['movie']['ids']['trakt'], "title": f"{list_movie['movie']['title']}", "rank": list_movie['rank']})
+    for item in watched_items:
+        for item_list in top_list_dict:
+            if item[media_type]["ids"]["trakt"] == item_list[media_type]["ids"]["trakt"]:
+                items_list.append({"id": item_list[media_type]['ids']['trakt'], "title": f"{item_list[media_type]['title']}", "rank": item_list['rank']})
                 counter += 1
                 break
 
-    return [counter, len(top_list_dict), movie_list]
+    return [counter, len(top_list_dict), items_list]
 
 def clear_list(dict_name: dict, media_type: str) -> None:
     for key in dict_name:
@@ -288,11 +298,13 @@ if len(TRAKT_API_KEY) != 64:
     print("Invalid Trakt API key, please check your trakt_request.py file")
     sys.exit()
 
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-
-if not os.path.exists(RESULTS_DIR):
-    os.makedirs(RESULTS_DIR)
+os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
+os.makedirs(IMG_DIR, exist_ok=True)
+os.makedirs(ACTORS_DIR, exist_ok=True)
+os.makedirs(DIRECTORS_DIR, exist_ok=True)
+os.makedirs(STUDIOS_DIR, exist_ok=True)
+os.makedirs(NETWORKS_DIR, exist_ok=True)
 
 trakt_request: TraktRequest = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_DIR)
 tmdb_request: TMDBRequest = TMDBRequest(TMDB_API_KEY, CACHE_DIR)
@@ -342,11 +354,21 @@ if get_in_cond or crew_cond:
 
     if "actors" in needs_update or get_in_cond:
         most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=sort_func(True), reverse=True)}
+
+        for actor in dict(list(most_watched_actors.items())[:10]):
+            if not os.path.isfile(os.path.join(DIRECTORS_DIR, f"{actor}.jpg")) and most_watched_actors[actor]["profile_path"] is not None:
+                tmdb_request.get_item_image(most_watched_actors[actor]["profile_path"], actor, ACTORS_DIR)
+
         with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "w") as outfile:
             json.dump(most_watched_actors, outfile, indent=default_indent)
 
     if "directors" in needs_update or get_in_cond:
-        most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(), reverse=True)}
+        most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(True), reverse=True)}
+
+        for director in dict(list(most_watched_directors.items())[:10]):
+            if not os.path.isfile(os.path.join(DIRECTORS_DIR, f"{director}.jpg")) and most_watched_directors[director]["profile_path"] is not None:
+                tmdb_request.get_item_image(most_watched_directors[director]["profile_path"], director, DIRECTORS_DIR)
+        
         with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "w") as outfile:
             json.dump(most_watched_directors, outfile, indent=default_indent)
 
@@ -370,12 +392,22 @@ if get_in_cond or details_cond:
         bar.finish()
 
     if "studios" in needs_update or get_in_cond:
-        most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(), reverse=True)}
+        most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
+
+        for studio in dict(list(most_watched_studios.items())[:10]):
+            if not os.path.isfile(os.path.join(STUDIOS_DIR, f"{studio}.jpg")) and most_watched_studios[studio]["logo_path"] is not None:
+                tmdb_request.get_item_image(most_watched_studios[studio]["logo_path"], studio, STUDIOS_DIR)
+
         with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "w") as outfile:
             json.dump(most_watched_studios, outfile, indent=default_indent)
 
     if "networks" in needs_update or get_in_cond:
-        most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(), reverse=True)}
+        most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(True), reverse=True)}
+        
+        for network in dict(list(most_watched_networks.items())[:10]):
+            if not os.path.isfile(os.path.join(NETWORKS_DIR, f"{network}.jpg")) and most_watched_networks[network]["logo_path"] is not None:
+                tmdb_request.get_item_image(most_watched_networks[network]["logo_path"], network, NETWORKS_DIR)
+
         with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "w") as outfile:
             json.dump(most_watched_networks, outfile, indent=default_indent)
 
@@ -389,18 +421,38 @@ if get_in_cond or details_cond:
         with open(os.path.join(RESULTS_DIR, "most_watched_countries.json"), "w") as outfile:
             json.dump(most_watched_countries, outfile, indent=default_indent)
 
-for top, list_id in top_lists_dict.items():
-    if get_in_cond or top in missing_top_lists:
+for top, list_id in top_movielists_dict.items():
+    if get_in_cond or top in missing_top_movielists:
         current_list_dict = trakt_request.get_list(list_id)
 
-        result: Tuple[int, int, list] = search_movie(watched_movies[0], current_list_dict)
+        result: Tuple[int, int, list] = search_item(watched_movies[0], current_list_dict, "movie")
         best_of[top] = {"watched": result[0], "total": result[1]}
         best_of[top]['watched_movies'] = sorted(result[2], key=lambda k: k['rank'])
+
+for top, list_id in top_showslists_dict.items():
+    if get_in_cond or top in missing_top_showslists:
+        current_list_dict = trakt_request.get_list(list_id)
+
+        result: Tuple[int, int, list] = search_item(watched_shows[0], current_list_dict, "show")
+        best_of[top] = {"watched": result[0], "total": result[1]}
+        best_of[top]['watched_shows'] = sorted(result[2], key=lambda k: k['rank'])
 
 
 with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "w") as outfile:
     json.dump(best_of, outfile, separators=(",", ":"), indent=default_indent)
 
 for media in media_types:
-    os.remove(os.path.join(RESULTS_DIR, f"watched_{media}.json"))
+    if os.path.isfile(os.path.join(CACHE_DIR, f"watched_{media}.json")):
+        os.remove(os.path.join(RESULTS_DIR, f"watched_{media}.json"))
     os.rename(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))
+
+graph_drawer = GraphDrawer()
+
+with open(os.path.join(RESULTS_DIR, "user_stats.json"), "r") as infile:
+    user_stats = json.load(infile)
+    graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
+
+with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "r") as infile:
+    most_watched_genres = json.load(infile)
+    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "genres.png"))
+

@@ -37,7 +37,7 @@ class TraktRequest:
         return self.get(f"{media_type}/{media_id}", "studios")
     
     def get_list(self, list_id):
-        return self.get(f"lists/{list_id}/items", "movies")
+        return self.get(f"lists/{list_id}", "items")
 
     def create_data_files(self):
         self.get_watched_movies()
