@@ -32,24 +32,21 @@ class GraphDrawer:
         plt.savefig("genres.png", bbox_inches='tight', dpi=300)
         plt.show()
 
-    def draw_genres_graph(self, data, file_name):
-        genres = list(data.keys())
-        movie_counts = [genre["movies"] for genre in data.values()]
-        show_counts = [genre["shows"] for genre in data.values()]
+    def draw_genres_graph(self, data, file_name, media_type):
+        media_genres = [genre for genre in data.keys() if media_type in genre]
+        media_counts = [genre[media_type] for genre in data.values() if media_type in genre]
 
         fig, ax = plt.subplots(figsize=(14, 1))
         width_sum = 0
-        for i in range(len(genres)):
-            curr_width = movie_counts[i] if movie_counts[i] > 200 else 200
+        for i in range(len(media_counts)):
+            curr_width = media_counts[i] if media_counts[i] > 200 else 200
             ax.barh("Movies", curr_width, .1, left=width_sum, edgecolor='white')
-            ax.text(width_sum + curr_width / 2, 0, movie_counts[i], ha='center', va='center', color='white')
+            ax.text(width_sum + curr_width / 2, 0, media_counts[i], ha='center', va='center', color='white')
             width_sum += curr_width
 
         ax.set_title("Genres")
         ax.set_xticks([])
-        ax.set_xlabel("Number of movies and shows")
         ax.set_yticks([])
-        ax.set_ylabel("Genres")
         ax.grid(False)
 
         plt.savefig(file_name, bbox_inches='tight', dpi=300)

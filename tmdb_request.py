@@ -38,9 +38,9 @@ class TMDBRequest:
     # Get an image from TMDB api given an item's image path, the item name and the cache folder
     def cache_item_image(self, image_path, item_name, directory, ex):
         with open(os.path.join(directory, f"{item_name}.{ex}"), "wb") as outfile:
-            print(f"Obtaining: {self.image_url}/{image_path}")
-            response = requests.get(f"{self.image_url}/{image_path}")
-            print(f"Obtained: {self.image_url}/{image_path}")
+            print(f"Obtaining: {self.image_url}{image_path}")
+            response = requests.get(f"{self.image_url}{image_path}")
+            print(f"Obtained: {self.image_url}{image_path}")
             outfile.write(response.content)
     
     # Cache or get data from trakt api by specifying the action and type of media

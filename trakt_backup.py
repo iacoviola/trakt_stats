@@ -85,10 +85,13 @@ def update_dict(dictionary: dict, key: str, i: int, media_type: str = "movies") 
 
     if i < record_del_startpoint or record_del_startpoint == -1:
         if key in dictionary:
-            dictionary[key][media_type] += 1
+            if media_type in dictionary[key]:
+                dictionary[key][media_type] += 1
+            else:
+                dictionary[key][media_type] = 1
         else:
-            dictionary[key] = {"movies": 0, "shows": 0}
-            dictionary[key][media_type] += 1
+            dictionary[key] = {}
+            dictionary[key][media_type] = 1
     else:
         if dictionary[key][media_type] > 1:
             dictionary[key][media_type] -= 1
@@ -172,7 +175,7 @@ def get_details(start: int, end: int, media_type: str, watched_items: dict) -> N
                         update_dict(most_watched_genres, target, i, media_type + "s")
 
                 #if "studios" in needs_update:
-                for studio in tmdb_item["production_companies"]:
+                for studio in tmdb_item["networks" if media_type == "show" else "production_companies"]:
                     target: str = studio["name"]
                     with threading.Lock():
                         if media_type == "movie":
@@ -243,14 +246,16 @@ def clear_list(dict_name: dict, media_type: str) -> None:
 
 def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
     if person:
-        path = "profile_path"
+        path_type = "profile_path"
     else:
-        path = "logo_path"
+        path_type = "logo_path"
 
     for item in dict(list(dict_name.items())[:10]):
-        ex: str = dict_name[item][path].split(".")[-1]
-        if not os.path.isfile(os.path.join(dir_name, f"{item}.{ex}")) and dict_name[item][path] is not None:
-            tmdb_request.cache_item_image(dict_name[item][path], item, dir_name, ex)
+        image_path = dict_name[item][path_type]
+        if image_path is not None:
+            ex: str = image_path.split(".")[-1]
+            if not os.path.isfile(os.path.join(dir_name, f"{item}.{ex}")):
+                tmdb_request.cache_item_image(image_path, item, dir_name, ex)
 
 load_dotenv()
 
@@ -366,7 +371,7 @@ if watched_movies[1] == RequestReason.WATCHED_FILE_MISSING:
 # If the watched_shows file is missing, we clear the lists of all shows
 if watched_shows[1] == RequestReason.WATCHED_FILE_MISSING:
     clear_list(most_watched_genres, "shows")
-    clear_list(most_watched_studios, "shows")
+    clear_list(most_watched_networks, "shows")
     clear_list(most_watched_countries, "shows")
     clear_list(most_watched_actors, "shows")
 
@@ -392,25 +397,21 @@ if get_in_cond or crew_cond:
     if "actors" in needs_update or get_in_cond:
         most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=sort_func(True), reverse=True)}
 
-        dump_images(most_watched_actors, ACTORS_DIR, person=True)
-
         with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "wt") as outfile:
             json.dump(most_watched_actors, outfile, indent=default_indent)
 
     if "directors" in needs_update or get_in_cond:
         most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(True), reverse=True)}
-
-        dump_images(most_watched_directors, DIRECTORS_DIR, person=True)
         
         with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "wt") as outfile:
             json.dump(most_watched_directors, outfile, indent=default_indent)
 
 # This is the condition which checks if the studios, genres or countries files need an update
-details_cond = "studios" in needs_update or "genres" in needs_update or "countries" in needs_update
+details_cond = "genres" in needs_update or "countries" in needs_update
 
-# Get in only if watched_movies or watched_shows need update or if the studios, genres or countries files need an update
+# Get in only if watched_movies or watched_shows need update or if the studios, networks, genres or countries files need an update
 if get_in_cond or details_cond:
-    if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond:
+    if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "studios" in needs_update:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
 
         progressbar_index = 0
@@ -418,7 +419,7 @@ if get_in_cond or details_cond:
 
         bar.finish()
     
-    if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond:
+    if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "networks" in needs_update:
         bar = progressbar.ProgressBar(maxval=shows_length, redirect_stdout=True, widgets=progressbar_widgets)
 
         progressbar_index = 0
@@ -429,15 +430,11 @@ if get_in_cond or details_cond:
     if "studios" in needs_update or get_in_cond:
         most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
 
-        dump_images(most_watched_studios, STUDIOS_DIR, person=False)
-
         with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "wt") as outfile:
             json.dump(most_watched_studios, outfile, indent=default_indent)
 
     if "networks" in needs_update or get_in_cond:
         most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(True), reverse=True)}
-        
-        dump_images(most_watched_networks, NETWORKS_DIR, person=False)
 
         with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "wt") as outfile:
             json.dump(most_watched_networks, outfile, indent=default_indent)
@@ -468,6 +465,10 @@ for top, list_id in top_showslists_dict.items():
         best_of[top] = {"watched": result[0], "total": result[1]}
         best_of[top]['watched_shows'] = sorted(result[2], key=lambda k: k['rank'])
 
+dump_images(most_watched_actors, ACTORS_DIR, person=True)
+dump_images(most_watched_directors, DIRECTORS_DIR, person=True)
+dump_images(most_watched_studios, STUDIOS_DIR, person=False)
+dump_images(most_watched_networks, NETWORKS_DIR, person=False)
 
 with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "wt") as outfile:
     json.dump(best_of, outfile, indent=default_indent)
@@ -483,4 +484,5 @@ with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
 
 with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
     most_watched_genres = json.load(infile)
-    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "genres.png"))
+    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "movies_genres.png"), "movies")
+    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "shows_genres.png"), "shows")
