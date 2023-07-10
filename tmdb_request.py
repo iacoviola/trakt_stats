@@ -6,53 +6,49 @@ import exceptions as ex
 
 class TMDBRequest:
 
+    # TMDB api base url
     base_url = "https://api.themoviedb.org/3"
+
+    # TMDB image base url
+    image_url = "https://image.tmdb.org/t/p/w500"
     
-    def __init__(self, api_key, root_path):
-        self.root_path = root_path
-        # Trakt request required headers
+    # Initialize the TMDBRequest class with the api key and the base path for the cache
+    def __init__(self, api_key, cache_path):
+        self.base_cache_path = cache_path
+        
+        # TMDB Authorization header
         self.headers = {
             "accept": "application/json",
             "Authorization": "Bearer " + api_key
         }
 
+    # Get crew from TMDB api given an item id and the type of the item (movie/show)
     def get_crew(self, media_id, media_type):
         return self.get(f"{media_type}/{media_id}", "credits" if media_type == "movie" else "aggregate_credits")
     
+    # Get item details from TMDB api given an item id and the type of the item (movie/show)
+    # As of now, this method is used to get:
+    # - Studio for movies
+    # - Networks for shows
+    # - Genres for movies/shows
+    # - Countries for movies/shows
     def get_item_details(self, media_id, media_type):
         return self.get(f"{media_type}", f"{media_id}")
     
-    def get_item_image(self, image_path, item_name, directory):
-        with open(os.path.join(directory, f"{item_name}.png"), "wb") as file:
-            print(f"Obtaining: https://image.tmdb.org/t/p/w500/{image_path}")
-            response = requests.get(f"https://image.tmdb.org/t/p/w500/{image_path}")
-            print(f"Obtained: https://image.tmdb.org/t/p/w500/{image_path}")
-            file.write(response.content)
-
-    def create_data_files(self):
-        self.get_watched_movies()
-        self.get_watched_episodes()
-        self.get_watched_shows()
-        self.get_movies_ratings()
-        self.get_episodes_ratings()
-        self.get_shows_ratings()
-        self.get_seasons_ratings()
-        self.get_movies_history()
-        self.get_episodes_ratings()
-        self.get_movies_watchlist()
-        self.get_episodes_history()
-        self.get_shows_watchlist()
-        self.get_movies_collection()
-        self.get_episodes_collection()
-        self.get_shows_collection()
-        self.get_user_stats()
-
-    # Cache data from trakt api by specifying the action and type of media
-    def get(self, action, endpoint_type, cache=False, caching_path="", oauth=False):
-        if oauth:
-            tmp_url = f"{self.users_url}/{action}/{endpoint_type}"
-        else:
-            tmp_url = f"{self.base_url}/{action}/{endpoint_type}"
+    # Get an image from TMDB api given an item's image path, the item name and the cache folder
+    def cache_item_image(self, image_path, item_name, directory, ex):
+        with open(os.path.join(directory, f"{item_name}.{ex}"), "wb") as outfile:
+            print(f"Obtaining: {self.image_url}/{image_path}")
+            response = requests.get(f"{self.image_url}/{image_path}")
+            print(f"Obtained: {self.image_url}/{image_path}")
+            outfile.write(response.content)
+    
+    # Cache or get data from trakt api by specifying the action and type of media
+    # if cache is True, the data will be cached in ./cache/ folder
+    # if cache is False, the data will be returned
+    def get(self, action, endpoint_type, cache=False, cache_folder=""):
+        
+        tmp_url = f"{self.base_url}/{action}/{endpoint_type}"
 
         print(f"Obtaining: {tmp_url}")
         response = requests.get(f"{tmp_url}", headers=self.headers)
@@ -70,53 +66,7 @@ class TMDBRequest:
         print(f"Obtained: {tmp_url}")
 
         if cache:
-            file_watched = open(os.path.join(self.root_path, f"{caching_path}/{action}_{endpoint_type}.json"), "w")
-            file_watched.write(json.dumps(response.json(), separators=(",", ":"), indent=4))
-            file_watched.close()
+            with open(os.path.join(self.base_cache_path, f"{cache_folder}/{action}_{endpoint_type}.json"), "wt") as outfile:
+                json.dump(response.json(), outfile, indent=4)
         else:
             return response.json()
-        
-    def get_watched_movies(self):
-        return self.get("watched", "movies", cache=True, caching_path="/movies", oauth=True)
-
-    def get_watched_episodes(self):
-        self.get("watched", "episodes")
-
-    def get_watched_shows(self):
-        return self.get("watched", "shows", cache=False, oauth=True)
-
-    def get_movies_ratings(self):
-        self.get("ratings", "movies")
-
-    def get_episodes_ratings(self):
-        self.get("ratings", "episodes")
-
-    def get_shows_ratings(self):
-        self.get("ratings", "shows")
-
-    def get_seasons_ratings(self):
-        self.get("ratings", "seasons")
-
-    def get_movies_history(self):
-        self.get("history", "movies")
-
-    def get_episodes_history(self):
-        self.get("history", "episodes")
-
-    def get_movies_watchlist(self):
-        self.get("watchlist", "movies")
-
-    def get_shows_watchlist(self):
-        self.get("watchlist", "shows")
-
-    def get_movies_collection(self):
-        self.get("collection", "movies")
-
-    def get_episodes_collection(self):
-        self.get("collection", "episodes")
-
-    def get_shows_collection(self):
-        self.get("collection", "shows")
-
-    def get_user_stats(self):
-        return self.get("stats", "", cache=False, oauth=True)

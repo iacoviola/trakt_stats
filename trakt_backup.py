@@ -17,88 +17,36 @@ import exceptions as ex
 from request_reason import RequestReason
 from graph_drawer import GraphDrawer
 
+# Sort dict based on the number of movies and shows watched for that specific item
 def sort_func(order_type: bool = False) -> Callable[[dict], int]:
     if order_type:
         return lambda item: item[1].get("movies", 0) + item[1].get("shows", 0)
     return lambda item: item[1]
 
+# Load the json files if they exist, else return an empty dict
 def load_file(file_path: str) -> dict:
     py_dict: dict = {}
 
-    if os.path.exists(os.path.join(RESULTS_DIR, f"most_watched_{file_path}.json")):
-        with open(os.path.join(RESULTS_DIR, f"most_watched_{file_path}.json")) as json_file:
+    try:
+        with open(os.path.join(RESULTS_DIR, f"most_watched_{file_path}.json"), "rt") as json_file:
             py_dict = json.load(json_file)
+    except FileNotFoundError:
+        pass
     
     if py_dict == {}:
         needs_update.append(file_path)
 
     return py_dict
 
-load_dotenv()
-# We load the necessary infos from the env file
-TRAKT_API_KEY: str = os.getenv("TRAKT_API_KEY")
-TMDB_API_KEY: str = os.getenv("TMDB_API_KEY")
-TRAKT_USERNAME: str = os.getenv("TRAKT_USERNAME")
-BACKUP_ROOT_PATH: str = os.getenv("BACKUP_ROOT_PATH")
-CACHE_DIR: str = "cache"
-RESULTS_DIR: str = "results"
-IMG_DIR: str = os.path.join(RESULTS_DIR, "img")
-ACTORS_DIR: str = os.path.join(IMG_DIR, "actors")
-DIRECTORS_DIR: str = os.path.join(IMG_DIR, "directors")
-STUDIOS_DIR: str = os.path.join(IMG_DIR, "studios")
-NETWORKS_DIR: str = os.path.join(IMG_DIR, "networks")
+# Check if some lists are missing from the best_of_progress.json file
+def check_best_of_contents(top_list: dict, missing_list: list) -> None:
+    for key, value in top_list.items():
+        if key not in best_of.keys():
+            missing_list.append(key)
+            if "lists" not in needs_update:
+                needs_update.append("lists")
 
-needs_update: list = []
-top_movielists_dict: dict = {"imdb_top250_movies": 2142753, "trakt_top250_movies": 4834049, "imdb_bottom100_movies": 2142791, "reddit_top250_2019_movies": 6544049, "statistical_best500_movies": 23629843}
-missing_top_movielists: list = []
-
-top_showslists_dict: dict = {"imdb_top250_shows": 2143363, "trakt_top250_shows": 4834057, "rollingstone_top100_shows": 2748259}
-missing_top_showslists: list = []
-media_types: list = ["movies", "shows"]
-
-most_watched_actors: dict = load_file("actors")
-most_watched_directors: dict = load_file("directors")
-most_watched_studios: dict = load_file("studios")
-most_watched_networks: dict = load_file("networks")
-most_watched_genres: dict = load_file("genres")
-most_watched_countries: dict = load_file("countries")
-
-if os.path.exists(os.path.join(RESULTS_DIR, "best_of_progress.json")):
-    with open(os.path.join(RESULTS_DIR, "best_of_progress.json")) as json_file:
-        best_of: dict = json.load(json_file)
-else:
-    best_of: dict = {}
-
-for key, value in top_movielists_dict.items():
-    if key not in best_of.keys():
-        missing_top_movielists.append(key)
-        if "lists" not in needs_update:
-            needs_update.append("lists")
-
-for key, value in top_showslists_dict.items():
-    if key not in best_of.keys():
-        missing_top_showslists.append(key)
-        if "lists" not in needs_update:
-            needs_update.append("lists")
-
-record_del_startpoint: int = -1
-max_threads: int = 6
-default_indent: int = 4
-
-progressbar_index: int = 0
-progressbar_widgets: list = [
-    " [", progressbar.Timer(), "] ",
-    progressbar.Bar(),
-    "(", progressbar.SimpleProgress(), ") ",
-]
-
-if not TRAKT_API_KEY:
-    print("Please, add your Trakt API key in the .env file")
-    sys.exit()
-if not TMDB_API_KEY:
-    print("Please, add your TMDB API key in the .env file")
-    sys.exit()
-
+# Returns the diffs between two json files as a valid json list
 def generate_json_diff(json1: dict, json2: dict) -> list:
 
     global record_del_startpoint
@@ -254,7 +202,7 @@ def get_designated_file(media_type: str) -> Tuple[dict, RequestReason]:
             new_file: dict = trakt_request.get_watched_movies()
         else:
             new_file: dict = trakt_request.get_watched_shows()
-        new_file_handle.write(json.dumps(new_file, separators=(',', ':'), indent=4))
+        json.dump(new_file, new_file_handle, indent=default_indent)
 
     latest_file: dict | None = None
 
@@ -293,6 +241,87 @@ def clear_list(dict_name: dict, media_type: str) -> None:
         if media_type in dict_name[key].keys():
             dict_name[key][media_type] = 0
 
+def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
+    if person:
+        path = "profile_path"
+    else:
+        path = "logo_path"
+
+    for item in dict(list(dict_name.items())[:10]):
+        ex: str = dict_name[item][path].split(".")[-1]
+        if not os.path.isfile(os.path.join(dir_name, f"{item}.{ex}")) and dict_name[item][path] is not None:
+            tmdb_request.cache_item_image(dict_name[item][path], item, dir_name, ex)
+
+load_dotenv()
+
+# Loading the necessary infos from the env file
+TRAKT_API_KEY: str = os.getenv("TRAKT_API_KEY")
+TMDB_API_KEY: str = os.getenv("TMDB_API_KEY")
+TRAKT_USERNAME: str = os.getenv("TRAKT_USERNAME")
+
+CACHE_DIR: str = "cache"
+RESULTS_DIR: str = "results"
+IMG_DIR: str = "results/img"
+ACTORS_DIR: str = "results/img/actors"
+DIRECTORS_DIR: str = "results/img/directors"
+STUDIOS_DIR: str = "results/img/studios"
+NETWORKS_DIR: str = "results/img/networks"
+
+needs_update: list = []
+
+missing_top_movielists: list = []
+top_movielists_dict: dict = {"imdb_top250_movies": 2142753, 
+                             "trakt_top250_movies": 4834049, 
+                             "imdb_bottom100_movies": 2142791, 
+                             "reddit_top250_2019_movies": 6544049,
+                             "statistical_best500_movies": 23629843}
+
+missing_top_showslists: list = []
+top_showslists_dict: dict = {"imdb_top250_shows": 2143363, 
+                             "trakt_top250_shows": 4834057, 
+                             "rollingstone_top100_shows": 2748259}
+
+media_types: list = ["movies", "shows"]
+
+most_watched_actors: dict = load_file("actors")
+most_watched_directors: dict = load_file("directors")
+most_watched_studios: dict = load_file("studios")
+most_watched_networks: dict = load_file("networks")
+most_watched_genres: dict = load_file("genres")
+most_watched_countries: dict = load_file("countries")
+
+try:
+    with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "rt") as json_file:
+        best_of: dict = json.load(json_file)
+except FileNotFoundError:
+    best_of: dict = {}
+    needs_update.append("lists")
+
+if dict != {}:
+    check_best_of_contents(top_movielists_dict, missing_top_movielists)
+    check_best_of_contents(top_showslists_dict, missing_top_showslists)
+
+record_del_startpoint: int = -1
+max_threads: int = 6
+default_indent: int = 4
+
+progressbar_index: int = 0
+progressbar_widgets: list = [
+    " [", progressbar.Timer(), "] ",
+    progressbar.Bar(),
+    "(", progressbar.SimpleProgress(), ") ",
+]
+
+if not TRAKT_API_KEY:
+    print("Please, add your Trakt API key in the .env file")
+    sys.exit()
+if not TMDB_API_KEY:
+    print("Please, add your TMDB API key in the .env file")
+    sys.exit()
+if not TRAKT_USERNAME:
+    print("Please, add your Trakt username in the .env file")
+    sys.exit()
+
 # Check if the API key is valid
 if len(TRAKT_API_KEY) != 64:
     print("Invalid Trakt API key, please check your trakt_request.py file")
@@ -306,34 +335,42 @@ os.makedirs(DIRECTORS_DIR, exist_ok=True)
 os.makedirs(STUDIOS_DIR, exist_ok=True)
 os.makedirs(NETWORKS_DIR, exist_ok=True)
 
+# Initialize the requests objects
 trakt_request: TraktRequest = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_DIR)
 tmdb_request: TMDBRequest = TMDBRequest(TMDB_API_KEY, CACHE_DIR)
 
-with open(os.path.join(RESULTS_DIR, "user_stats.json"), "w") as stats_file:
-    stats_file.write(json.dumps(trakt_request.get_user_stats(), separators=(",", ":"), indent=default_indent))   
+# Dump the user stats in user_stats.json
+with open(os.path.join(RESULTS_DIR, "user_stats.json"), "wt") as stats_file:
+    json.dump(trakt_request.get_user_stats(), stats_file, indent=default_indent)   
 
+# Get the watched movies and shows for the user
 watched_movies: dict = get_designated_file("movie")
 movies_length: int = len(watched_movies[0])
 
 watched_shows: dict = get_designated_file("show")
 shows_length: int = len(watched_shows[0])
 
+# This is the condition which checks if watched_movies or watched_shows are the ones needing an update
 get_in_cond: bool = watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING
+# This is the condition which checks if the actors or directors files need an update
 crew_cond: bool = "actors" in needs_update or "directors" in needs_update
 
+# If the watched_movies file is missing, we clear the lists of all movies
 if watched_movies[1] == RequestReason.WATCHED_FILE_MISSING:
-    clear_list(most_watched_genres, "movie")
-    clear_list(most_watched_studios, "movie")
-    clear_list(most_watched_countries, "movie")
-    clear_list(most_watched_actors, "movie")
-    most_watched_directors = {}
+    clear_list(most_watched_genres, "movies")
+    clear_list(most_watched_studios, "movies")
+    clear_list(most_watched_countries, "movies")
+    clear_list(most_watched_actors, "movies")
+    clear_list(most_watched_directors, "movies")
 
+# If the watched_shows file is missing, we clear the lists of all shows
 if watched_shows[1] == RequestReason.WATCHED_FILE_MISSING:
-    clear_list(most_watched_genres, "show")
-    clear_list(most_watched_studios, "show")
-    clear_list(most_watched_countries, "show")
-    clear_list(most_watched_actors, "show")
+    clear_list(most_watched_genres, "shows")
+    clear_list(most_watched_studios, "shows")
+    clear_list(most_watched_countries, "shows")
+    clear_list(most_watched_actors, "shows")
 
+# Get in only if watched_movies or watched_shows need update or if the actors or directors files need an update
 if get_in_cond or crew_cond:
 
     if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
@@ -355,25 +392,23 @@ if get_in_cond or crew_cond:
     if "actors" in needs_update or get_in_cond:
         most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=sort_func(True), reverse=True)}
 
-        for actor in dict(list(most_watched_actors.items())[:10]):
-            if not os.path.isfile(os.path.join(DIRECTORS_DIR, f"{actor}.jpg")) and most_watched_actors[actor]["profile_path"] is not None:
-                tmdb_request.get_item_image(most_watched_actors[actor]["profile_path"], actor, ACTORS_DIR)
+        dump_images(most_watched_actors, ACTORS_DIR, person=True)
 
-        with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "wt") as outfile:
             json.dump(most_watched_actors, outfile, indent=default_indent)
 
     if "directors" in needs_update or get_in_cond:
         most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(True), reverse=True)}
 
-        for director in dict(list(most_watched_directors.items())[:10]):
-            if not os.path.isfile(os.path.join(DIRECTORS_DIR, f"{director}.jpg")) and most_watched_directors[director]["profile_path"] is not None:
-                tmdb_request.get_item_image(most_watched_directors[director]["profile_path"], director, DIRECTORS_DIR)
+        dump_images(most_watched_directors, DIRECTORS_DIR, person=True)
         
-        with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "wt") as outfile:
             json.dump(most_watched_directors, outfile, indent=default_indent)
 
+# This is the condition which checks if the studios, genres or countries files need an update
 details_cond = "studios" in needs_update or "genres" in needs_update or "countries" in needs_update
 
+# Get in only if watched_movies or watched_shows need update or if the studios, genres or countries files need an update
 if get_in_cond or details_cond:
     if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
@@ -394,31 +429,27 @@ if get_in_cond or details_cond:
     if "studios" in needs_update or get_in_cond:
         most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
 
-        for studio in dict(list(most_watched_studios.items())[:10]):
-            if not os.path.isfile(os.path.join(STUDIOS_DIR, f"{studio}.jpg")) and most_watched_studios[studio]["logo_path"] is not None:
-                tmdb_request.get_item_image(most_watched_studios[studio]["logo_path"], studio, STUDIOS_DIR)
+        dump_images(most_watched_studios, STUDIOS_DIR, person=False)
 
-        with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "wt") as outfile:
             json.dump(most_watched_studios, outfile, indent=default_indent)
 
     if "networks" in needs_update or get_in_cond:
         most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(True), reverse=True)}
         
-        for network in dict(list(most_watched_networks.items())[:10]):
-            if not os.path.isfile(os.path.join(NETWORKS_DIR, f"{network}.jpg")) and most_watched_networks[network]["logo_path"] is not None:
-                tmdb_request.get_item_image(most_watched_networks[network]["logo_path"], network, NETWORKS_DIR)
+        dump_images(most_watched_networks, NETWORKS_DIR, person=False)
 
-        with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "wt") as outfile:
             json.dump(most_watched_networks, outfile, indent=default_indent)
 
     if "genres" in needs_update or get_in_cond:
         most_watched_genres = {k: v for k, v in sorted(most_watched_genres.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "wt") as outfile:
             json.dump(most_watched_genres, outfile, indent=default_indent)
 
     if "countries" in needs_update or get_in_cond:
         most_watched_countries = {k: v for k, v in sorted(most_watched_countries.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_countries.json"), "w") as outfile:
+        with open(os.path.join(RESULTS_DIR, "most_watched_countries.json"), "wt") as outfile:
             json.dump(most_watched_countries, outfile, indent=default_indent)
 
 for top, list_id in top_movielists_dict.items():
@@ -438,21 +469,18 @@ for top, list_id in top_showslists_dict.items():
         best_of[top]['watched_shows'] = sorted(result[2], key=lambda k: k['rank'])
 
 
-with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "w") as outfile:
-    json.dump(best_of, outfile, separators=(",", ":"), indent=default_indent)
+with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "wt") as outfile:
+    json.dump(best_of, outfile, indent=default_indent)
 
 for media in media_types:
-    if os.path.isfile(os.path.join(CACHE_DIR, f"watched_{media}.json")):
-        os.remove(os.path.join(RESULTS_DIR, f"watched_{media}.json"))
-    os.rename(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))
+    os.replace(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))
 
 graph_drawer = GraphDrawer()
 
-with open(os.path.join(RESULTS_DIR, "user_stats.json"), "r") as infile:
+with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
     user_stats = json.load(infile)
     graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
 
-with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "r") as infile:
+with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
     most_watched_genres = json.load(infile)
     graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "genres.png"))
-
