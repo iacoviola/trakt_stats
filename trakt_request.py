@@ -4,6 +4,8 @@ import os
 
 import exceptions as ex
 
+from arguments import vprint
+
 class TraktRequest:
 
     # Trakt api base url
@@ -77,7 +79,7 @@ class TraktRequest:
         else:
             tmp_url = f"{self.base_url}/{action}/{endpoint_type}"
 
-        print(f"Obtaining: {tmp_url}")
+        vprint(f"Obtaining: {tmp_url}")
         response = requests.get(f"{tmp_url}", headers=self.headers)
 
         if response.status_code == 404:
@@ -90,7 +92,7 @@ class TraktRequest:
         if not response.json():
             raise ex.EmptyResponseException(f"No {endpoint_type} found in {action}")
 
-        print(f"Obtained: {tmp_url}")
+        vprint(f"Obtained: {tmp_url}")
 
         if cache:
             with open(os.path.join(self.base_cache_path, f"{cache_folder}/{action}_{endpoint_type}.json"), "wt") as out_file:

@@ -2,10 +2,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 import importlib.util
+import logging
 
 from pprint import pprint
 
+from arguments import vprint
+
 class GraphDrawer:
+
+    def __init__(self):
+        kaleido = importlib.util.find_spec("kaleido")
+        orca = importlib.util.find_spec("orca")
+
+        self.map_writable = kaleido is not None or orca is not None
+
+        if not self.map_writable:
+            logging.warning("Install kaleido or orca to save the map as an image")
 
     def draw_bar_graph(self, x, y, title, xlabel, ylabel, file_name: str):
 
@@ -91,14 +103,15 @@ class GraphDrawer:
             showcountries=True
         )
 
+        vprint(f"Saving {filename}.html")
         fig.write_html(filename + ".html")
+        vprint(f"Saved {filename}.html")
 
         kaleido = importlib.util.find_spec("kaleido")
         orca = importlib.util.find_spec("orca")
-
-        if kaleido is not None or orca is not None:
-            if format is not None:
-                for fmt in format:
-                    fig.write_image(filename + "." + fmt, scale=3, format=fmt)
-        else:
-            print("Install kaleido or orca to save as svg, png, jpeg, webp and pdf")
+            
+        if format is not None and self.map_writable:
+            for fmt in format:
+                vprint(f"Saving {filename}.{fmt}")
+                fig.write_image(filename + "." + fmt, scale=3, format=fmt)
+                vprint(f"Saved {filename}.{fmt}")

@@ -16,6 +16,7 @@ from tmdb_request import TMDBRequest
 import exceptions as ex
 from request_reason import RequestReason
 from graph_drawer import GraphDrawer
+from arguments import vprint
 
 # Sort dict based on the number of movies and shows watched for that specific item
 def sort_func(order_type: bool = False) -> Callable[[dict], int]:
@@ -407,15 +408,19 @@ if get_in_cond or crew_cond:
 
     if "actors" in needs_update or get_in_cond:
         most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=sort_func(True), reverse=True)}
-
         with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "wt") as outfile:
             json.dump(most_watched_actors, outfile, indent=default_indent)
+            vprint("Dumped most_watched_actors.json")
+    else:
+        vprint("Skipped most_watched_actors.json")
 
     if "directors" in needs_update or get_in_cond:
         most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(True), reverse=True)}
-        
         with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "wt") as outfile:
             json.dump(most_watched_directors, outfile, indent=default_indent)
+            vprint("Dumped most_watched_directors.json")
+    else:
+        vprint("Skipped most_watched_directors.json")
 
 # This is the condition which checks if the studios, genres or countries files need an update
 details_cond = "genres" in needs_update or "countries" in needs_update
@@ -440,25 +445,35 @@ if get_in_cond or details_cond:
 
     if "studios" in needs_update or get_in_cond:
         most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
-
         with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "wt") as outfile:
             json.dump(most_watched_studios, outfile, indent=default_indent)
+            vprint("Dumped most_watched_studios.json")
+    else:
+        vprint("Skipping most_watched_studios.json")
 
     if "networks" in needs_update or get_in_cond:
         most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(True), reverse=True)}
-
         with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "wt") as outfile:
             json.dump(most_watched_networks, outfile, indent=default_indent)
+            vprint("Dumped most_watched_networks.json")
+    else:
+        vprint("Skipping most_watched_networks.json")
 
     if "genres" in needs_update or get_in_cond:
         most_watched_genres = {k: v for k, v in sorted(most_watched_genres.items(), key=sort_func(True), reverse=True)}
         with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "wt") as outfile:
             json.dump(most_watched_genres, outfile, indent=default_indent)
+            vprint("Dumped most_watched_genres.json")
+    else:
+        vprint("Skipping most_watched_genres.json")
 
     if "countries" in needs_update or get_in_cond:
         most_watched_countries = {k: v for k, v in sorted(most_watched_countries.items(), key=sort_func(True), reverse=True)}
         with open(os.path.join(RESULTS_DIR, "most_watched_countries.json"), "wt") as outfile:
             json.dump(most_watched_countries, outfile, indent=default_indent)
+            vprint("Dumped most_watched_countries.json")
+    else:
+        vprint("Skipping most_watched_countries.json")
 
 for top, list_id in top_movielists_dict.items():
     if get_in_cond or top in missing_top_movielists:
@@ -492,13 +507,18 @@ graph_drawer = GraphDrawer()
 with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
     user_stats = json.load(infile)
     graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
+    vprint("Ratings distribution graph generated")
 
 if "genres" in needs_update or get_in_cond:
     with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
         most_watched_genres = json.load(infile)
         graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "movies_genres.png"), "movies")
+        vprint("Movies genres graph generated")
         graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "shows_genres.png"), "shows")
+        vprint("Shows genres graph generated")
 
 if ("countries" in needs_update or get_in_cond) and country_codes != {}:
     graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "movie_countries"), "movies", ["png", "svg"])
+    vprint("Movies countries map generated")
     graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "show_countries"), "shows", ["png", "svg"])
+    vprint("Shows countries map generated")

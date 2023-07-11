@@ -4,6 +4,8 @@ import os
 
 import exceptions as ex
 
+from arguments import vprint
+
 class TMDBRequest:
 
     # TMDB api base url
@@ -38,9 +40,9 @@ class TMDBRequest:
     # Get an image from TMDB api given an item's image path, the item name and the cache folder
     def cache_item_image(self, image_path, item_name, directory, ex):
         with open(os.path.join(directory, f"{item_name}.{ex}"), "wb") as outfile:
-            print(f"Obtaining: {self.image_url}{image_path}")
+            vprint(f"Obtaining: {self.image_url}{image_path}")
             response = requests.get(f"{self.image_url}{image_path}")
-            print(f"Obtained: {self.image_url}{image_path}")
+            vprint(f"Obtained: {self.image_url}{image_path}")
             outfile.write(response.content)
     
     # Cache or get data from trakt api by specifying the action and type of media
@@ -50,7 +52,7 @@ class TMDBRequest:
         
         tmp_url = f"{self.base_url}/{action}/{endpoint_type}"
 
-        print(f"Obtaining: {tmp_url}")
+        vprint(f"Obtaining: {tmp_url}")
         response = requests.get(f"{tmp_url}", headers=self.headers)
 
         if response.status_code == 404:
@@ -63,7 +65,7 @@ class TMDBRequest:
         if not response.json():
             raise ex.EmptyResponseException(f"No {endpoint_type} found in {action}")
 
-        print(f"Obtained: {tmp_url}")
+        vprint(f"Obtained: {tmp_url}")
 
         if cache:
             with open(os.path.join(self.base_cache_path, f"{cache_folder}/{action}_{endpoint_type}.json"), "wt") as outfile:
