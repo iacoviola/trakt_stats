@@ -3,3 +3,4 @@ python-dotenv~=1.0.0
 progressbar2==3.53.3
 deepdiff==6.3.1
 matplotlib==3.7.2
+plotly==5.15.0

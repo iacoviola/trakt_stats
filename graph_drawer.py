@@ -1,11 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
+import importlib.util
 
 from pprint import pprint
 
 class GraphDrawer:
 
-    def draw_bar_graph(self, x, y, title, xlabel, ylabel, file_name):
+    def draw_bar_graph(self, x, y, title, xlabel, ylabel, file_name: str):
 
         fig, ax = plt.subplots()
         
@@ -21,7 +23,6 @@ class GraphDrawer:
 
         #save as png
         plt.savefig(file_name, bbox_inches='tight', dpi=300)
-        #plt.show()
 
     def draw_pie_graph(self, data):
 
@@ -50,4 +51,54 @@ class GraphDrawer:
         ax.grid(False)
 
         plt.savefig(file_name, bbox_inches='tight', dpi=300)
-        #plt.close()
+
+    def draw_countries_map(self, data, countries, filename: str, media_type, format=None):
+
+        # [0.5, 'rgb(156, 156, 255)'] add at second position
+        colorscales = [[0, 'rgb(0, 0, 128)'], [0.95, 'rgb(128, 128, 200)'], [1, 'rgb(255, 255, 255)']]      
+        country_values = [data[country][media_type] if country in data.keys() and media_type in data[country].keys() else 0 for country in countries]
+
+        fig = go.Figure(data=go.Choropleth(
+            locations=[countries[country]["alpha-3"] for country in countries],
+            z=country_values,
+            text=[countries[country]["name"] for country in countries],
+            colorscale=colorscales,
+            autocolorscale=False,
+            reversescale=True,
+            marker_line_color='darkgray',
+            marker_line_width=0.5,
+            colorbar_tickprefix='',
+            colorbar_title=media_type.capitalize()
+        ))
+
+        fig.update_layout(
+            title_text=f'{media_type.capitalize()} by Country',
+            #paper_bgcolor='black',
+            geo=dict(
+                #bgcolor='black',
+                showframe=False,
+                showcoastlines=True,
+                projection_type='equirectangular'
+            ),
+            #font=dict(color='white'),
+            yaxis_showgrid=False,
+            xaxis_showgrid=False
+        )
+
+        fig.update_geos(
+            showlakes=False,
+            showland=False,
+            showcountries=True
+        )
+
+        fig.write_html(filename + ".html")
+
+        kaleido = importlib.util.find_spec("kaleido")
+        orca = importlib.util.find_spec("orca")
+
+        if kaleido is not None or orca is not None:
+            if format is not None:
+                for fmt in format:
+                    fig.write_image(filename + "." + fmt, scale=3, format=fmt)
+        else:
+            print("Install kaleido or orca to save as svg, png, jpeg, webp and pdf")

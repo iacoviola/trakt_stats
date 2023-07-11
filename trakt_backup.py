@@ -143,7 +143,7 @@ def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None
         else:
             error_occured = False
 
-def get_details(start: int, end: int, media_type: str, watched_items: dict) -> None:
+def get_details(start: int, end: int, media_type: str, watched_items: list) -> None:
     
         global progressbar_index
     
@@ -189,9 +189,11 @@ def get_details(start: int, end: int, media_type: str, watched_items: dict) -> N
 
                 #if "countries" in needs_update:
                 for country in tmdb_item["production_countries"]:
-                    target: str = country["name"]
+                    target: str = country["iso_3166_1"]
                     with threading.Lock():
                         update_dict(most_watched_countries, target, i, media_type + "s")
+                        if "name" not in most_watched_countries[target]:
+                            most_watched_countries[target]["name"] = country["name"]
             else:
                 error_occured = False
 
@@ -267,6 +269,7 @@ TRAKT_USERNAME: str = os.getenv("TRAKT_USERNAME")
 CACHE_DIR: str = "cache"
 RESULTS_DIR: str = "results"
 IMG_DIR: str = "results/img"
+MAPS_DIR: str = "results/maps"
 ACTORS_DIR: str = "results/img/actors"
 DIRECTORS_DIR: str = "results/img/directors"
 STUDIOS_DIR: str = "results/img/studios"
@@ -294,6 +297,13 @@ most_watched_studios: dict = load_file("studios")
 most_watched_networks: dict = load_file("networks")
 most_watched_genres: dict = load_file("genres")
 most_watched_countries: dict = load_file("countries")
+
+try:
+    with open("country_codes.json", "rt") as json_file:
+        country_codes: dict = json.load(json_file)
+except FileNotFoundError:
+    country_codes: dict = {}
+    print("Country codes file not found. Please, add it back in the root folder, no maps will be generated.")
 
 try:
     with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "rt") as json_file:
@@ -335,6 +345,7 @@ if len(TRAKT_API_KEY) != 64:
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(IMG_DIR, exist_ok=True)
+os.makedirs(MAPS_DIR, exist_ok=True)
 os.makedirs(ACTORS_DIR, exist_ok=True)
 os.makedirs(DIRECTORS_DIR, exist_ok=True)
 os.makedirs(STUDIOS_DIR, exist_ok=True)
@@ -482,7 +493,12 @@ with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
     user_stats = json.load(infile)
     graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
 
-with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
-    most_watched_genres = json.load(infile)
-    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "movies_genres.png"), "movies")
-    graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "shows_genres.png"), "shows")
+if "genres" in needs_update or get_in_cond:
+    with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
+        most_watched_genres = json.load(infile)
+        graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "movies_genres.png"), "movies")
+        graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "shows_genres.png"), "shows")
+
+if ("countries" in needs_update or get_in_cond) and country_codes != {}:
+    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "movie_countries"), "movies", ["png", "svg"])
+    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "show_countries"), "shows", ["png", "svg"])
