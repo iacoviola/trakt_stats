@@ -1,8 +1,7 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import plotly.graph_objects as go
 import importlib.util
 import logging
+import os
 
 from pprint import pprint
 
@@ -10,7 +9,18 @@ from arguments import vprint
 
 class GraphDrawer:
 
-    def __init__(self):
+    format_needs_update = []
+
+    def __init__(self, formats=[]):
+        self.formats = formats
+        if "html" not in formats:
+            self.formats.append("html")
+
+        for fmt in formats:
+            if fmt not in ["png", "jpeg", "webp", "svg", "pdf"]:
+                logging.warning(f"Unknown format {fmt}")
+                formats.remove(fmt)
+
         kaleido = importlib.util.find_spec("kaleido")
         orca = importlib.util.find_spec("orca")
 
@@ -19,52 +29,76 @@ class GraphDrawer:
         if not self.map_writable:
             logging.warning("Install kaleido or orca to save the map as an image")
 
-    def draw_bar_graph(self, x, y, title, xlabel, ylabel, file_name: str):
+    def print_graph(self, fig, filename):
+        if self.map_writable:
+            for fmt in self.format_needs_update:
+                vprint(f"Saving {filename}.{fmt}")
+                if fmt == "html":
+                    fig.write_html(filename + "." + fmt)
+                else:
+                    fig.write_image(filename + "." + fmt, scale=3, format=fmt)
+                vprint(f"Saved {filename}.{fmt}")
 
-        fig, ax = plt.subplots()
+        self.format_needs_update = []
+
+    def graph_needs_update(self, filename):
+        for fmt in self.formats:
+            if not os.path.exists(filename + "." + fmt):
+                self.format_needs_update.append(fmt)
+        return self.format_needs_update != []
+
+    def ratings_graph(self, data, totals, file_name):
+
+        if not self.graph_needs_update(file_name):
+            return
         
-        ax.bar(np.arange(1, x + 1), y)
-        ax.set_title(title)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.set_xticks(np.arange(1, x + 1))
-        ax.grid(False)
+        vprint(f"Creating {file_name}...")
 
-        for x in ax.patches:
-            ax.annotate(str(x.get_height()), (x.get_x() + x.get_width() / 2, x.get_height()), ha='center', va='bottom')
+        labels = [i for i in range(1, 11)] 
+        plot_data = []
 
-        #save as png
-        plt.savefig(file_name, bbox_inches='tight', dpi=300)
+        for key in data.keys():
+            plot_data.append(go.Bar(name=key, x=labels, y=data[key]))
 
-    def draw_pie_graph(self, data):
+        fig = go.Figure(data=plot_data)
 
-        fig, ax = plt.subplots()
+        total_labels = [{"x": x, "y": total + 15, "text": str(total), "showarrow":False} for x, total in zip(labels, totals)]
+        fig.update_layout(barmode='stack',
+            xaxis_title="Rating", 
+            yaxis_title="Count", 
+            xaxis_fixedrange=True,
+            yaxis_fixedrange=True,
+            xaxis=dict(dtick=1), 
+            title_text="Ratings Distribution",
+            annotations=total_labels
+            )
+        
+        self.print_graph(fig, file_name)
 
-        ax.pie(data.values(), labels=data.keys(), startangle=90)
+    def genres_graph(self, data, file_name, media_type):
 
-        plt.savefig("genres.png", bbox_inches='tight', dpi=300)
-        plt.show()
+        if not self.graph_needs_update(file_name):
+            return
+        
+        vprint(f"Creating {file_name}...")
 
-    def draw_genres_graph(self, data, file_name, media_type):
-        media_genres = [genre for genre in data.keys() if media_type in genre]
-        media_counts = [genre[media_type] for genre in data.values() if media_type in genre]
+        labels = [genre for genre in data.keys() if media_type in data[genre]]
+        sizes = [genre[media_type] for genre in data.values() if media_type in genre]
 
-        fig, ax = plt.subplots(figsize=(14, 1))
-        width_sum = 0
-        for i in range(len(media_counts)):
-            curr_width = media_counts[i] if media_counts[i] > 200 else 200
-            ax.barh("Movies", curr_width, .1, left=width_sum, edgecolor='white')
-            ax.text(width_sum + curr_width / 2, 0, media_counts[i], ha='center', va='center', color='white')
-            width_sum += curr_width
+        fig = go.Figure(data=[go.Pie(labels=labels, values=sizes)])
 
-        ax.set_title("Genres")
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(False)
+        fig.update_layout(
+            title_text=f'{media_type.capitalize()} Genres'
+        )
 
-        plt.savefig(file_name, bbox_inches='tight', dpi=300)
+        self.print_graph(fig, file_name)
 
-    def draw_countries_map(self, data, countries, filename: str, media_type, format=None):
+    def draw_countries_map(self, data, countries, filename: str, media_type):
+
+        if not self.graph_needs_update(filename):
+            return
+        
+        vprint(f"Creating {filename}...")
 
         # [0.5, 'rgb(156, 156, 255)'] add at second position
         colorscales = [[0, 'rgb(0, 0, 128)'], [0.95, 'rgb(128, 128, 200)'], [1, 'rgb(255, 255, 255)']]      
@@ -103,12 +137,4 @@ class GraphDrawer:
             showcountries=True
         )
 
-        vprint(f"Saving {filename}.html")
-        fig.write_html(filename + ".html")
-        vprint(f"Saved {filename}.html")
-
-        if format is not None and self.map_writable:
-            for fmt in format:
-                vprint(f"Saving {filename}.{fmt}")
-                fig.write_image(filename + "." + fmt, scale=3, format=fmt)
-                vprint(f"Saved {filename}.{fmt}")
+        self.print_graph(fig, filename)

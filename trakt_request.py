@@ -69,6 +69,9 @@ class TraktRequest:
     # Get some stats for the user specified in the env file
     def get_user_stats(self):
         return self.get("stats", "", cache=False, need_user=True)
+    
+    def get_user_ratings(self, media_type):
+        return self.get("ratings", media_type, cache=False, need_user=True)
 
     # Cache or get data from trakt api by specifying the action and type of media
     # if cache is True, the data will be cached in ./cache/ folder

@@ -18,6 +18,8 @@ from request_reason import RequestReason
 from graph_drawer import GraphDrawer
 from arguments import vprint
 
+import logging
+
 # Sort dict based on the number of movies and shows watched for that specific item
 def sort_func(order_type: bool = False) -> Callable[[dict], int]:
     if order_type:
@@ -258,7 +260,7 @@ def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
     else:
         path_type = "logo_path"
 
-    for item in dict(list(dict_name.items())[:10]):
+    for item in dict(sorted(dict_name.items(), key=sort_func(True), reverse=True)[:10]):
         image_path = dict_name[item][path_type]
         if image_path is not None:
             ex: str = image_path.split(".")[-1]
@@ -284,6 +286,7 @@ CACHE_DIR: str = "cache"
 RESULTS_DIR: str = "results"
 IMG_DIR: str = "results/img"
 MAPS_DIR: str = "results/maps"
+GRAPHS_DIR: str = "results/graphs"
 ACTORS_DIR: str = "results/img/actors"
 DIRECTORS_DIR: str = "results/img/directors"
 STUDIOS_DIR: str = "results/img/studios"
@@ -305,6 +308,7 @@ top_showslists_dict: dict = {"imdb_top250_shows": 2143363,
                              "rollingstone_top100_shows": 2748259}
 
 media_types: list = ["movies", "shows"]
+extended_media_types: list = ["movies", "shows", "seasons", "episodes"]
 
 most_watched_actors: dict = load_file("actors")
 most_watched_directors: dict = load_file("directors")
@@ -361,6 +365,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(MAPS_DIR, exist_ok=True)
+os.makedirs(GRAPHS_DIR, exist_ok=True)
 os.makedirs(ACTORS_DIR, exist_ok=True)
 os.makedirs(DIRECTORS_DIR, exist_ok=True)
 os.makedirs(STUDIOS_DIR, exist_ok=True)
@@ -369,10 +374,6 @@ os.makedirs(NETWORKS_DIR, exist_ok=True)
 # Initialize the requests objects
 trakt_request: TraktRequest = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_DIR)
 tmdb_request: TMDBRequest = TMDBRequest(TMDB_API_KEY, CACHE_DIR)
-
-# Dump the user stats in user_stats.json
-with open(os.path.join(RESULTS_DIR, "user_stats.json"), "wt") as stats_file:
-    json.dump(trakt_request.get_user_stats(), stats_file, indent=default_indent)   
 
 # Get the watched movies and shows for the user
 watched_movies: dict = get_designated_file("movie")
@@ -464,17 +465,35 @@ with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "wt") as outfile:
 for media in media_types:
     os.replace(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))
 
-graph_drawer = GraphDrawer()
+ # Dump the user stats in user_stats.json
+with open(os.path.join(RESULTS_DIR, "user_stats.json"), "wt") as stats_file:
+    user_stats: dict = trakt_request.get_user_stats()
+    json.dump(user_stats, stats_file, indent=default_indent)
 
-with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
-    user_stats = json.load(infile)
-    graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
+try:
+    totals = user_stats["ratings"]["distribution"].values()
+except Exception as e:
+    totals = []
+
+graph_drawer = GraphDrawer(["png", "svg", "mll"])
+
+try:
+    ratings = {}
+    for media in extended_media_types:
+        current_media_ratings = trakt_request.get_user_ratings(media)
+        ratings[media] = [0] * 10
+        for rating in current_media_ratings:
+            ratings[media][rating['rating'] - 1] += 1
+
+    graph_drawer.ratings_graph(ratings, totals, os.path.join(GRAPHS_DIR, f"ratings_distribution"))
     vprint("Ratings distribution graph generated")
+except Exception as e:
+    logging.error(f"Error while generating ratings graph: {e}")
 
 for media in media_types:
-    if "genres" in needs_update or get_in_cond or not os.path.isfile(os.path.join(IMG_DIR, f"{media}_genres.png")):
-            graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, f"{media}_genres.png"), media)
-            vprint(f"{media.capitalize()} genres graph generated")
-    if ("countries" in needs_update or get_in_cond or not os.path.isfile(os.path.join(MAPS_DIR, f"{media}_countries.html"))) and country_codes != {}:
+    if "genres" in needs_update or get_in_cond:
+        graph_drawer.genres_graph(most_watched_genres, os.path.join(GRAPHS_DIR, f"{media}_genres"), media)
+    if "countries" in needs_update or get_in_cond or country_codes != {}:
         graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, f"{media}_countries"), media)
-        vprint(f"{media.capitalize()} countries map generated")
+    elif country_codes == {}:
+        logging.warning("Country codes not found, countries map not generated")
