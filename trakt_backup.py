@@ -66,6 +66,11 @@ def generate_json_diff(json1: dict, json2: dict) -> list:
     return missing_items
 
 def launch_threads(function: Callable[[int, int, str, dict], None], n_threads: int, list_len: int, media_type: str, watched_items: dict) -> None:
+    
+    global progressbar_index
+
+    progressbar_index = 0
+    
     threads: list = []
 
     for i in range(0, n_threads):
@@ -260,6 +265,14 @@ def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
             if not os.path.isfile(os.path.join(dir_name, f"{item}.{ex}")):
                 tmdb_request.cache_item_image(image_path, item, dir_name, ex)
 
+
+def dump_files(dict_name: dict, dump_type: str) -> None:
+    if dump_type in needs_update or get_in_cond:
+        dict_name = {k: v for k, v in sorted(dict_name.items(), key=sort_func(True), reverse=True)}
+        with open(os.path.join(RESULTS_DIR, f"most_watched_{dump_type}json"), "wt") as outfile:
+            json.dump(dict_name, outfile, indent=default_indent)
+            vprint(f"Dumped most_watched_{dump_type}.json")
+
 load_dotenv()
 
 # Loading the necessary infos from the env file
@@ -283,7 +296,8 @@ top_movielists_dict: dict = {"imdb_top250_movies": 2142753,
                              "trakt_top250_movies": 4834049, 
                              "imdb_bottom100_movies": 2142791, 
                              "reddit_top250_2019_movies": 6544049,
-                             "statistical_best500_movies": 23629843}
+                             "statistical_best500_movies": 23629843,
+                             "oscar_best_picture_movies": 25486243}
 
 missing_top_showslists: list = []
 top_showslists_dict: dict = {"imdb_top250_shows": 2143363, 
@@ -392,35 +406,16 @@ if get_in_cond or crew_cond:
 
     if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
-
-        progressbar_index = 0
         launch_threads(get_crew, max_threads, movies_length, "movie", watched_movies[0])
-
         bar.finish()
 
     if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
         bar = progressbar.ProgressBar(maxval=shows_length, redirect_stdout=True, widgets=progressbar_widgets)
-
-        progressbar_index = 0
         launch_threads(get_crew, max_threads, shows_length, "show", watched_shows[0])
-
         bar.finish()
 
-    if "actors" in needs_update or get_in_cond:
-        most_watched_actors = {k: v for k, v in sorted(most_watched_actors.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_actors.json"), "wt") as outfile:
-            json.dump(most_watched_actors, outfile, indent=default_indent)
-            vprint("Dumped most_watched_actors.json")
-    else:
-        vprint("Skipped most_watched_actors.json")
-
-    if "directors" in needs_update or get_in_cond:
-        most_watched_directors = {k: v for k, v in sorted(most_watched_directors.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_directors.json"), "wt") as outfile:
-            json.dump(most_watched_directors, outfile, indent=default_indent)
-            vprint("Dumped most_watched_directors.json")
-    else:
-        vprint("Skipped most_watched_directors.json")
+    dump_files(most_watched_actors, "actors")
+    dump_files(most_watched_directors, "directors")
 
 # This is the condition which checks if the studios, genres or countries files need an update
 details_cond = "genres" in needs_update or "countries" in needs_update
@@ -429,51 +424,18 @@ details_cond = "genres" in needs_update or "countries" in needs_update
 if get_in_cond or details_cond:
     if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "studios" in needs_update:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
-
-        progressbar_index = 0
         launch_threads(get_details, max_threads, movies_length, "movie", watched_movies[0])
-
         bar.finish()
     
     if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "networks" in needs_update:
         bar = progressbar.ProgressBar(maxval=shows_length, redirect_stdout=True, widgets=progressbar_widgets)
-
-        progressbar_index = 0
         launch_threads(get_details, max_threads, shows_length, "show", watched_shows[0])
-        
         bar.finish()
 
-    if "studios" in needs_update or get_in_cond:
-        most_watched_studios = {k: v for k, v in sorted(most_watched_studios.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_studios.json"), "wt") as outfile:
-            json.dump(most_watched_studios, outfile, indent=default_indent)
-            vprint("Dumped most_watched_studios.json")
-    else:
-        vprint("Skipping most_watched_studios.json")
-
-    if "networks" in needs_update or get_in_cond:
-        most_watched_networks = {k: v for k, v in sorted(most_watched_networks.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_networks.json"), "wt") as outfile:
-            json.dump(most_watched_networks, outfile, indent=default_indent)
-            vprint("Dumped most_watched_networks.json")
-    else:
-        vprint("Skipping most_watched_networks.json")
-
-    if "genres" in needs_update or get_in_cond:
-        most_watched_genres = {k: v for k, v in sorted(most_watched_genres.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "wt") as outfile:
-            json.dump(most_watched_genres, outfile, indent=default_indent)
-            vprint("Dumped most_watched_genres.json")
-    else:
-        vprint("Skipping most_watched_genres.json")
-
-    if "countries" in needs_update or get_in_cond:
-        most_watched_countries = {k: v for k, v in sorted(most_watched_countries.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, "most_watched_countries.json"), "wt") as outfile:
-            json.dump(most_watched_countries, outfile, indent=default_indent)
-            vprint("Dumped most_watched_countries.json")
-    else:
-        vprint("Skipping most_watched_countries.json")
+    dump_files(most_watched_genres, "genres")
+    dump_files(most_watched_studios, "studios")
+    dump_files(most_watched_networks, "networks")
+    dump_files(most_watched_countries, "countries")
 
 for top, list_id in top_movielists_dict.items():
     if get_in_cond or top in missing_top_movielists:
@@ -518,7 +480,7 @@ if "genres" in needs_update or get_in_cond:
         vprint("Shows genres graph generated")
 
 if ("countries" in needs_update or get_in_cond) and country_codes != {}:
-    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "movie_countries"), "movies", ["png", "svg"])
+    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "movie_countries"), "movies")
     vprint("Movies countries map generated")
-    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "show_countries"), "shows", ["png", "svg"])
+    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "show_countries"), "shows")
     vprint("Shows countries map generated")

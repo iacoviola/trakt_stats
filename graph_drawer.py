@@ -107,9 +107,6 @@ class GraphDrawer:
         fig.write_html(filename + ".html")
         vprint(f"Saved {filename}.html")
 
-        kaleido = importlib.util.find_spec("kaleido")
-        orca = importlib.util.find_spec("orca")
-            
         if format is not None and self.map_writable:
             for fmt in format:
                 vprint(f"Saving {filename}.{fmt}")
