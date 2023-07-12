@@ -269,7 +269,7 @@ def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
 def dump_files(dict_name: dict, dump_type: str) -> None:
     if dump_type in needs_update or get_in_cond:
         dict_name = {k: v for k, v in sorted(dict_name.items(), key=sort_func(True), reverse=True)}
-        with open(os.path.join(RESULTS_DIR, f"most_watched_{dump_type}json"), "wt") as outfile:
+        with open(os.path.join(RESULTS_DIR, f"most_watched_{dump_type}.json"), "wt") as outfile:
             json.dump(dict_name, outfile, indent=default_indent)
             vprint(f"Dumped most_watched_{dump_type}.json")
 
@@ -471,16 +471,10 @@ with open(os.path.join(RESULTS_DIR, "user_stats.json"), "rt") as infile:
     graph_drawer.draw_bar_graph(10, user_stats["ratings"]["distribution"].values(), "Total Ratings", "Ratings", "Number of ratings", os.path.join(IMG_DIR, "ratings_distribution.png"))
     vprint("Ratings distribution graph generated")
 
-if "genres" in needs_update or get_in_cond:
-    with open(os.path.join(RESULTS_DIR, "most_watched_genres.json"), "rt") as infile:
-        most_watched_genres = json.load(infile)
-        graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "movies_genres.png"), "movies")
-        vprint("Movies genres graph generated")
-        graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, "shows_genres.png"), "shows")
-        vprint("Shows genres graph generated")
-
-if ("countries" in needs_update or get_in_cond) and country_codes != {}:
-    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "movie_countries"), "movies")
-    vprint("Movies countries map generated")
-    graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, "show_countries"), "shows")
-    vprint("Shows countries map generated")
+for media in media_types:
+    if "genres" in needs_update or get_in_cond or not os.path.isfile(os.path.join(IMG_DIR, f"{media}_genres.png")):
+            graph_drawer.draw_genres_graph(most_watched_genres, os.path.join(IMG_DIR, f"{media}_genres.png"), media)
+            vprint(f"{media.capitalize()} genres graph generated")
+    if ("countries" in needs_update or get_in_cond or not os.path.isfile(os.path.join(MAPS_DIR, f"{media}_countries.html"))) and country_codes != {}:
+        graph_drawer.draw_countries_map(most_watched_countries, country_codes, os.path.join(MAPS_DIR, f"{media}_countries"), media)
+        vprint(f"{media.capitalize()} countries map generated")
