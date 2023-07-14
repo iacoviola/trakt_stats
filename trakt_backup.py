@@ -21,10 +21,8 @@ from arguments import vprint
 import logging
 
 # Sort dict based on the number of movies and shows watched for that specific item
-def sort_func(order_type: bool = False) -> Callable[[dict], int]:
-    if order_type:
-        return lambda item: item[1].get("movies", 0) + item[1].get("shows", 0)
-    return lambda item: item[1]
+def dict_sort_func(item) -> Callable[[dict], int]:
+    return item[1].get("movies", 0) + item[1].get("shows", 0)
 
 # Load the json files if they exist, else return an empty dict
 def load_file(file_path: str) -> dict:
@@ -43,7 +41,7 @@ def load_file(file_path: str) -> dict:
 
 # Check if some lists are missing from the best_of_progress.json file
 def check_best_of_contents(top_list: dict, missing_list: list) -> None:
-    for key, value in top_list.items():
+    for key in top_list.keys():
         if key not in best_of.keys():
             missing_list.append(key)
             if "lists" not in needs_update:
@@ -58,11 +56,11 @@ def generate_json_diff(json1: dict, json2: dict) -> list:
     diff = DeepDiff(json1, json2, ignore_order=True)
 
     if "iterable_item_added" in diff:
-        for key, item in diff["iterable_item_added"].items():
+        for item in diff["iterable_item_added"].values():
             missing_items.append(item)
             record_del_startpoint += 1
     if "iterable_item_removed" in diff:
-        for key, item in diff["iterable_item_removed"].items():
+        for item in diff["iterable_item_removed"].values():
             missing_items.append(item)
 
     return missing_items
@@ -82,10 +80,11 @@ def launch_threads(function: Callable[[int, int, str, dict], None], n_threads: i
             end = list_len
         
         threads.append(threading.Thread(target=function, args=(start, end, media_type, watched_items)))
+        threads[i].daemon = True
         threads[i].start()
 
-    for i in range(0, n_threads):
-        threads[i].join()
+    for thread in threads:
+        thread.join()
 
 def update_dict(dictionary: dict, key: str, i: int, media_type: str = "movies") -> None:
 
@@ -106,40 +105,37 @@ def update_dict(dictionary: dict, key: str, i: int, media_type: str = "movies") 
         else:
             del dictionary[key][media_type]
 
-def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None:
+def request_item(item: dict, media_type: str, request_function) -> None:
+    while(True):
+        try:
+            crew: dict = request_function(item[media_type]["ids"]["tmdb"], "tv" if media_type == "show" else media_type)
+        except ex.OverRateLimitException as e:
+            logging.exception(e)
+            logging.error("Retrying in " + str(e.retry_after()) + " seconds...")
+            time.sleep(e.retry_after())
+        except (ex.EmptyResponseException, ex.ItemNotFoundException) as e:
+            raise
+        else:
+            break
+    return crew
 
+def get_crew(start: int, end: int, media_type: str, watched_items: list) -> None:
     global progressbar_index
-
-    error_occured: bool = False
-
     for i, item in enumerate(watched_items[start:end]):
         with threading.Lock():
             bar.update(progressbar_index)
             progressbar_index += 1
-        while(True):
-            try:
-                crew: dict = tmdb_request.get_crew(item[media_type]["ids"]["tmdb"], "tv" if media_type == "show" else media_type)
-            except ex.OverRateLimitException as e:
-                print(e)
-                print("Retrying in " + str(e.retry_after()) + " seconds...")
-                time.sleep(e.retry_after())
-            except (ex.EmptyResponseException, ex.ItemNotFoundException) as e:
-                print(e)
-                error_occured = True
-                break
-            else:
-                break
-
-        if not error_occured:
-            #if "actors" in needs_update:
+        
+        try:
+            crew: dict = request_item(item, media_type, tmdb_request.get_crew)
+            
             for actor in crew["cast"]:
                 target: str = actor["name"]
                 with threading.Lock():
                     update_dict(most_watched_actors, target, i, media_type + "s")
                     if "profile_path" not in most_watched_actors[target]:
                         most_watched_actors[target]["profile_path"] = actor["profile_path"]
-
-            #if "directors" in needs_update and media_type == "movie":
+            
             if media_type == "movie":
                 for crew_p in crew["crew"]:
                     if crew_p["job"] == "Director":
@@ -148,62 +144,44 @@ def get_crew(start: int, end: int, media_type: str, watched_items: dict) -> None
                             update_dict(most_watched_directors, target, i)
                             if "profile_path" not in most_watched_directors[target]:
                                 most_watched_directors[target]["profile_path"] = crew_p["profile_path"]
-        else:
-            error_occured = False
+        except Exception as e:
+            logging.exception(e)
 
 def get_details(start: int, end: int, media_type: str, watched_items: list) -> None:
+    global progressbar_index    
+    for i, item in enumerate(watched_items[start:end]):
+        with threading.Lock():
+            bar.update(progressbar_index)
+            progressbar_index += 1
     
-        global progressbar_index
-    
-        error_occured: bool = False
-    
-        for i, item in enumerate(watched_items[start:end]):
-            with threading.Lock():
-                bar.update(progressbar_index)
-                progressbar_index += 1
-            while(True):
-                try:
-                    tmdb_item: dict = tmdb_request.get_item_details(item[media_type]["ids"]["tmdb"], "tv" if media_type == "show" else media_type)
-                except ex.OverRateLimitException as e:
-                    print(e)
-                    print("Retrying in " + str(e.retry_after()) + " seconds...")
-                    time.sleep(e.retry_after())
-                except (ex.EmptyResponseException, ex.ItemNotFoundException) as e:
-                    print(e)
-                    error_occured = True
-                    break
-                else:
-                    break
+        try:
+            tmdb_item: dict = request_item(item, media_type, tmdb_request.get_item_details)
 
-            if not error_occured:
-                #if "genres" in needs_update:
-                for genre in tmdb_item["genres"]:
-                    target: str = genre["name"]
-                    with threading.Lock():
-                        update_dict(most_watched_genres, target, i, media_type + "s")
+            for genre in tmdb_item["genres"]:
+                target: str = genre["name"]
+                with threading.Lock():
+                    update_dict(most_watched_genres, target, i, media_type + "s")
 
-                #if "studios" in needs_update:
-                for studio in tmdb_item["networks" if media_type == "show" else "production_companies"]:
-                    target: str = studio["name"]
-                    with threading.Lock():
-                        if media_type == "movie":
-                            update_dict(most_watched_studios, target, i, media_type + "s")
-                            if "logo_path" not in most_watched_studios[target]:
-                                most_watched_studios[target]["logo_path"] = studio["logo_path"]
-                        else:
-                            update_dict(most_watched_networks, target, i, media_type + "s")
-                            if "logo_path" not in most_watched_networks[target]:
-                                most_watched_networks[target]["logo_path"] = studio["logo_path"]
+            for studio in tmdb_item["networks" if media_type == "show" else "production_companies"]:
+                target: str = studio["name"]
+                with threading.Lock():
+                    if media_type == "movie":
+                        update_dict(most_watched_studios, target, i, media_type + "s")
+                        if "logo_path" not in most_watched_studios[target]:
+                            most_watched_studios[target]["logo_path"] = studio["logo_path"]
+                    else:
+                        update_dict(most_watched_networks, target, i, media_type + "s")
+                        if "logo_path" not in most_watched_networks[target]:
+                            most_watched_networks[target]["logo_path"] = studio["logo_path"]
 
-                #if "countries" in needs_update:
-                for country in tmdb_item["production_countries"]:
-                    target: str = country["iso_3166_1"]
-                    with threading.Lock():
-                        update_dict(most_watched_countries, target, i, media_type + "s")
-                        if "name" not in most_watched_countries[target]:
-                            most_watched_countries[target]["name"] = country["name"]
-            else:
-                error_occured = False
+            for country in tmdb_item["production_countries"]:
+                target: str = country["iso_3166_1"]
+                with threading.Lock():
+                    update_dict(most_watched_countries, target, i, media_type + "s")
+                    if "name" not in most_watched_countries[target]:
+                        most_watched_countries[target]["name"] = country["name"]
+        except Exception as e:
+            logging.exception(e)
 
 def get_designated_file(media_type: str) -> Tuple[dict, RequestReason]:
 
@@ -249,7 +227,16 @@ def search_item(watched_items: dict, top_list_dict: dict, media_type: str) -> Tu
 
     return [counter, len(top_list_dict), items_list]
 
-def clear_list(dict_name: dict, media_type: str) -> None:
+def update_best_of_list(top_itemlists_dict: dict, watched_items: dict, missing_top_itemlists: dict, media_type: str) -> None:
+    for top, list_id in top_itemlists_dict.items():
+        if top in missing_top_itemlists:
+            current_list_dict = trakt_request.get_list(list_id)
+
+            n_watched, n_total, watched_list = search_item(watched_items, current_list_dict, media_type)
+            best_of[top] = {"watched": n_watched, "total": n_total}
+            best_of[top][f'watched_{media_type}s'] = sorted(watched_list, key=lambda k: k['rank'])
+
+def clear_dict(dict_name: dict, media_type: str) -> None:
     for key in dict_name:
         if media_type in dict_name[key].keys():
             dict_name[key][media_type] = 0
@@ -260,7 +247,7 @@ def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
     else:
         path_type = "logo_path"
 
-    for item in dict(sorted(dict_name.items(), key=sort_func(True), reverse=True)[:10]):
+    for item in dict(sorted(dict_name.items(), key=dict_sort_func, reverse=True)[:10]):
         image_path = dict_name[item][path_type]
         if image_path is not None:
             ex: str = image_path.split(".")[-1]
@@ -270,7 +257,7 @@ def dump_images(dict_name: dict, dir_name: str, person: bool) -> None:
 
 def dump_files(dict_name: dict, dump_type: str) -> None:
     if dump_type in needs_update or get_in_cond:
-        dict_name = {k: v for k, v in sorted(dict_name.items(), key=sort_func(True), reverse=True)}
+        dict_name = {k: v for k, v in sorted(dict_name.items(), key=dict_sort_func, reverse=True)}
         with open(os.path.join(RESULTS_DIR, f"most_watched_{dump_type}.json"), "wt") as outfile:
             json.dump(dict_name, outfile, indent=default_indent)
             vprint(f"Dumped most_watched_{dump_type}.json")
@@ -376,43 +363,43 @@ trakt_request: TraktRequest = TraktRequest(TRAKT_API_KEY, TRAKT_USERNAME, CACHE_
 tmdb_request: TMDBRequest = TMDBRequest(TMDB_API_KEY, CACHE_DIR)
 
 # Get the watched movies and shows for the user
-watched_movies: dict = get_designated_file("movie")
-movies_length: int = len(watched_movies[0])
+watched_movies, movies_reason = get_designated_file("movie")
+movies_length: int = len(watched_movies)
 
-watched_shows: dict = get_designated_file("show")
-shows_length: int = len(watched_shows[0])
+watched_shows, shows_reason = get_designated_file("show")
+shows_length: int = len(watched_shows)
 
 # This is the condition which checks if watched_movies or watched_shows are the ones needing an update
-get_in_cond: bool = watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING
+get_in_cond: bool = movies_reason >= RequestReason.WATCHED_FILE_MISSING or shows_reason >= RequestReason.WATCHED_FILE_MISSING
 # This is the condition which checks if the actors or directors files need an update
 crew_cond: bool = "actors" in needs_update or "directors" in needs_update
 
 # If the watched_movies file is missing, we clear the lists of all movies
-if watched_movies[1] == RequestReason.WATCHED_FILE_MISSING:
-    clear_list(most_watched_genres, "movies")
-    clear_list(most_watched_studios, "movies")
-    clear_list(most_watched_countries, "movies")
-    clear_list(most_watched_actors, "movies")
-    clear_list(most_watched_directors, "movies")
+if movies_reason == RequestReason.WATCHED_FILE_MISSING:
+    clear_dict(most_watched_genres, "movies")
+    clear_dict(most_watched_studios, "movies")
+    clear_dict(most_watched_countries, "movies")
+    clear_dict(most_watched_actors, "movies")
+    clear_dict(most_watched_directors, "movies")
 
 # If the watched_shows file is missing, we clear the lists of all shows
-if watched_shows[1] == RequestReason.WATCHED_FILE_MISSING:
-    clear_list(most_watched_genres, "shows")
-    clear_list(most_watched_networks, "shows")
-    clear_list(most_watched_countries, "shows")
-    clear_list(most_watched_actors, "shows")
+if shows_reason == RequestReason.WATCHED_FILE_MISSING:
+    clear_dict(most_watched_genres, "shows")
+    clear_dict(most_watched_networks, "shows")
+    clear_dict(most_watched_countries, "shows")
+    clear_dict(most_watched_actors, "shows")
 
 # Get in only if watched_movies or watched_shows need update or if the actors or directors files need an update
 if get_in_cond or crew_cond:
 
-    if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
+    if movies_reason >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
-        launch_threads(get_crew, max_threads, movies_length, "movie", watched_movies[0])
+        launch_threads(get_crew, max_threads, movies_length, "movie", watched_movies)
         bar.finish()
 
-    if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
+    if shows_reason >= RequestReason.WATCHED_FILE_MISSING or crew_cond:
         bar = progressbar.ProgressBar(maxval=shows_length, redirect_stdout=True, widgets=progressbar_widgets)
-        launch_threads(get_crew, max_threads, shows_length, "show", watched_shows[0])
+        launch_threads(get_crew, max_threads, shows_length, "show", watched_shows)
         bar.finish()
 
     dump_files(most_watched_actors, "actors")
@@ -423,14 +410,14 @@ details_cond = "genres" in needs_update or "countries" in needs_update
 
 # Get in only if watched_movies or watched_shows need update or if the studios, networks, genres or countries files need an update
 if get_in_cond or details_cond:
-    if watched_movies[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "studios" in needs_update:
+    if movies_reason >= RequestReason.WATCHED_FILE_MISSING or details_cond or "studios" in needs_update:
         bar = progressbar.ProgressBar(maxval=movies_length, redirect_stdout=True, widgets=progressbar_widgets)
-        launch_threads(get_details, max_threads, movies_length, "movie", watched_movies[0])
+        launch_threads(get_details, max_threads, movies_length, "movie", watched_movies)
         bar.finish()
     
-    if watched_shows[1] >= RequestReason.WATCHED_FILE_MISSING or details_cond or "networks" in needs_update:
+    if shows_reason >= RequestReason.WATCHED_FILE_MISSING or details_cond or "networks" in needs_update:
         bar = progressbar.ProgressBar(maxval=shows_length, redirect_stdout=True, widgets=progressbar_widgets)
-        launch_threads(get_details, max_threads, shows_length, "show", watched_shows[0])
+        launch_threads(get_details, max_threads, shows_length, "show", watched_shows)
         bar.finish()
 
     dump_files(most_watched_genres, "genres")
@@ -438,39 +425,29 @@ if get_in_cond or details_cond:
     dump_files(most_watched_networks, "networks")
     dump_files(most_watched_countries, "countries")
 
-for top, list_id in top_movielists_dict.items():
-    if get_in_cond or top in missing_top_movielists:
-        current_list_dict = trakt_request.get_list(list_id)
+if get_in_cond:
+    missing_top_movielists = top_movielists_dict.keys()
+    missing_top_showslists = top_showslists_dict.keys()
 
-        result: Tuple[int, int, list] = search_item(watched_movies[0], current_list_dict, "movie")
-        best_of[top] = {"watched": result[0], "total": result[1]}
-        best_of[top]['watched_movies'] = sorted(result[2], key=lambda k: k['rank'])
+update_best_of_list(top_movielists_dict, watched_movies, missing_top_movielists, "movie")
+update_best_of_list(top_showslists_dict, watched_shows, missing_top_showslists, "show")
 
-for top, list_id in top_showslists_dict.items():
-    if get_in_cond or top in missing_top_showslists:
-        current_list_dict = trakt_request.get_list(list_id)
-
-        result: Tuple[int, int, list] = search_item(watched_shows[0], current_list_dict, "show")
-        best_of[top] = {"watched": result[0], "total": result[1]}
-        best_of[top]['watched_shows'] = sorted(result[2], key=lambda k: k['rank'])
+with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "wt") as outfile:
+    json.dump(best_of, outfile, indent=default_indent)
 
 dump_images(most_watched_actors, ACTORS_DIR, person=True)
 dump_images(most_watched_directors, DIRECTORS_DIR, person=True)
 dump_images(most_watched_studios, STUDIOS_DIR, person=False)
 dump_images(most_watched_networks, NETWORKS_DIR, person=False)
 
-with open(os.path.join(RESULTS_DIR, "best_of_progress.json"), "wt") as outfile:
-    json.dump(best_of, outfile, indent=default_indent)
-
 for media in media_types:
     os.replace(os.path.join(CACHE_DIR, f"tmp_watched_{media}.json"), os.path.join(RESULTS_DIR, f"watched_{media}.json"))
 
- # Dump the user stats in user_stats.json
-with open(os.path.join(RESULTS_DIR, "user_stats.json"), "wt") as stats_file:
-    user_stats: dict = trakt_request.get_user_stats()
-    json.dump(user_stats, stats_file, indent=default_indent)
-
 try:
+    # Dump the user stats in user_stats.json
+    with open(os.path.join(RESULTS_DIR, "user_stats.json"), "wt") as stats_file:
+        user_stats: dict = trakt_request.get_user_stats()
+        json.dump(user_stats, stats_file, indent=default_indent)
     totals = user_stats["ratings"]["distribution"].values()
 except Exception as e:
     totals = []
